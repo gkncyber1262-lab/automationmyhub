@@ -61,16 +61,26 @@ if os.path.exists(WA_CONFIG_FILE):
 
 def get_gateway_credentials():
     """Extracts active gateway and credentials safely from config."""
-    gateway = WA_CONFIG.get("active_gateway") or WA_CONFIG.get("gateway") or "ultramsg"
-    gateways = WA_CONFIG.get("gateways", {})
+    cfg = {}
+    if os.path.exists(WA_CONFIG_FILE):
+        try:
+            with open(WA_CONFIG_FILE, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+        except Exception:
+            cfg = WA_CONFIG
+    else:
+        cfg = WA_CONFIG
+
+    gateway = cfg.get("active_gateway") or cfg.get("gateway") or "ultramsg"
+    gateways = cfg.get("gateways", {})
     
     # UltraMsg
-    um = gateways.get("ultramsg") or WA_CONFIG.get("ultramsg") or {}
-    um_instance = um.get("instance_id") or WA_CONFIG.get("instance_id", "instance196018")
-    um_token = um.get("token") or WA_CONFIG.get("token", "hc9tgxc274xe56s0")
+    um = gateways.get("ultramsg") or cfg.get("ultramsg") or {}
+    um_instance = um.get("instance_id") or cfg.get("instance_id", "instance196090")
+    um_token = um.get("token") or cfg.get("token", "gs4m9i7tr8cmi8iq")
     
     # GreenAPI
-    ga = gateways.get("green_api") or gateways.get("greenapi") or WA_CONFIG.get("greenapi") or {}
+    ga = gateways.get("green_api") or gateways.get("greenapi") or cfg.get("greenapi") or {}
     ga_inst = ga.get("id_instance") or ga.get("idInstance") or ""
     ga_token = ga.get("api_token_instance") or ga.get("api_token") or ""
     
