@@ -12,10 +12,13 @@ Architecture:
      - Step 0 (Start): Greet IO & prompt for NCRP Complaint PDF.
      - Step 1 (PDF Upload): Downloads PDF, parses fraud metrics, sends summary card.
      - Step 2 (IO Select): [1] SI Arvind Kumar, [2] SI Renu, [3] HC Rajendra.
-     - Step 3 (Notice No): Asks for starting notice number (default: 5744).
-     - Step 4 (Execution): Runs full case pipeline with pythoncom CoInitialize in thread.
-     - Step 5 (Document Dispatch): Uploads generated documents to UltraMsg media CDN and
-       delivers DOCX, PDF, and 3D visualizers directly into the WhatsApp conversation.
+     - Step 3 (FIR Reference): [1] Only NCRP Complaint (Default), [2] Registered FIR (Asks FIR No).
+     - Step 4 (Notice No): Asks for starting notice number (default: 5744).
+     - Step 5 (Execution): Runs full case pipeline with pythoncom CoInitialize in worker thread.
+     - Step 6 (WhatsApp Dispatch - ALL NOTICES): Delivers Combine DOCX, 3D Chart, ALL 17 Bank
+       Notice PDFs, ATM CCTV Notices, and a complete ZIP bundle directly into WhatsApp!
+     - Step 7 (Email Automation): Automatically dispatches all bank notices via Gmail
+       (gkncyber1262@gmail.com -> rajendra.28082016@delhipolice.gov.in) with 15s delay.
 ========================================================================================
 """
 
@@ -26,9 +29,10 @@ import time
 import re
 import shutil
 import glob
+import zipfile
 import datetime
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 import uvicorn
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
@@ -42,8 +46,8 @@ from ncrp_master_agent import NCRPUnifiedAgent
 
 app = FastAPI(
     title="NCRP Master Agent - WhatsApp Automation Webhook Service",
-    description="Automated WhatsApp bot for NCRP complaint analysis and notice dispatch",
-    version="3.1.0"
+    description="Automated WhatsApp bot for NCRP complaint analysis, notice dispatch and email automation",
+    version="3.2.0"
 )
 
 # Agent instance
@@ -175,8 +179,26 @@ def send_whatsapp_media(to_number: str, file_path: str, caption: str = "", is_im
     return False
 
 
-def process_case_background(sender: str, pdf_path: str, io_name: str, notice_no: int):
-    """Executes the pipeline in background and dispatches files to WhatsApp."""
+def create_case_zip_bundle(case_dir: str) -> Optional[str]:
+    """Creates a complete ZIP archive of all generated notices and files."""
+    try:
+        base_name = os.path.basename(case_dir)
+        zip_path = os.path.join(case_dir, f"All_Notices_Bundle_{base_name}.zip")
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk(case_dir):
+                for f in files:
+                    if f.endswith(('.docx', '.pdf', '.png', '.xlsx')) and not f.endswith('.zip'):
+                        fp = os.path.join(root, f)
+                        rel_path = os.path.relpath(fp, case_dir)
+                        zf.write(fp, rel_path)
+        return zip_path
+    except Exception as e:
+        print(f"[ZIP Warning] Could not create zip: {e}")
+        return None
+
+
+def process_case_background(sender: str, pdf_path: str, io_name: str, notice_no: int, fir_details: Optional[Dict[str, Any]] = None):
+    """Executes the pipeline in background, dispatches ALL files to WhatsApp, and triggers email automation."""
     # Initialize COM apartment for this thread (required for MS Word DOCX->PDF export)
     try:
         import pythoncom
@@ -201,10 +223,13 @@ def process_case_background(sender: str, pdf_path: str, io_name: str, notice_no:
             "mobile": io_mobile
         }
 
+        # Resolve FIR Details
+        active_fir = fir_details if (fir_details and fir_details.get("is_fir")) else {"is_fir": False}
+
         # Run unified master pipeline
         res = agent.run_case_pipeline(
             case_file_or_target=pdf_path,
-            fir_details={"is_fir": False},
+            fir_details=active_fir,
             io_override=io_override,
             start_notice_no=notice_no,
             notice_date_override=datetime.datetime.now().strftime("%d/%m/%Y"),
@@ -216,56 +241,113 @@ def process_case_background(sender: str, pdf_path: str, io_name: str, notice_no:
 
         # Fallback to search if case_dir was not returned
         if not case_dir or not os.path.exists(case_dir):
-            if ack:
+            if active_fir.get("is_fir") and active_fir.get("fir_no"):
+                clean_fir = re.sub(r'[^a-zA-Z0-9_-]', '_', str(active_fir.get("fir_no")))
+                case_dir = os.path.join(agent.output_dir, f"FIR_{clean_fir}")
+            elif ack:
                 case_dir = os.path.join(agent.output_dir, f"Case_{ack}")
-            if not os.path.exists(case_dir):
-                # Search for latest case folder
-                all_cases = glob.glob(os.path.join(agent.output_dir, "Case_*"))
+            
+            if not case_dir or not os.path.exists(case_dir):
+                all_cases = glob.glob(os.path.join(agent.output_dir, "Case_*")) + glob.glob(os.path.join(agent.output_dir, "FIR_*"))
                 if all_cases:
                     case_dir = max(all_cases, key=os.path.getmtime)
 
+        case_folder_name = os.path.basename(case_dir)
         print(f"[WA Pipeline Done] Case Dir: {case_dir}")
 
-        # Send completion notification
-        send_whatsapp_text(sender, f"✅ सफलता! केस ACK No. {ack} के सभी नोटिस व दस्तावेज़ तैयार कर दिए गए हैं। अब फाइल्स प्रेषित की जा रही हैं...")
+        ref_str = f"FIR No. {active_fir['fir_no']}" if active_fir.get("is_fir") else f"ACK No. {ack}"
+        send_whatsapp_text(sender, f"✅ सफलता! केस ({ref_str}) के सभी नोटिस व दस्तावेज़ तैयार हो गए हैं। अब एक-एक करके सभी फाइल्स भेजी जा रही हैं...")
 
         # 1. Send Combine Notice DOCX (Consolidated single document for all banks)
         combine_candidates = glob.glob(os.path.join(case_dir, "combine_notice", "*.docx")) or \
                              glob.glob(os.path.join(case_dir, "Notice_DOCX_Files", "Combine_Notice*.docx"))
         if combine_candidates:
             combine_docx = combine_candidates[0]
-            send_whatsapp_media(sender, combine_docx, caption=f"📄 कंबाइंड बैंक नोटिस (Combine Notice #{notice_no}) - सभी बैंकों हेतु संयुक्त मांग पत्र (केवल DOCX)")
+            send_whatsapp_media(sender, combine_docx, caption=f"📄 कंबाइंड बैंक नोटिस (Combine Notice #{notice_no}) - सभी बैंकों हेतु संयुक्त मांग पत्र (केवल DOCX फ़ाइल)")
 
         # 2. Send 3D Money Trail Visual Flowchart (PNG)
         radar_imgs = glob.glob(os.path.join(case_dir, "forensic_money_trail_3d*.png"))
         if radar_imgs:
             send_whatsapp_media(sender, radar_imgs[0], caption="📊 फोरेंसिक मनी ट्रेल 3D विज़ुअल चार्ट (लेयर 1 से 5)", is_image=True)
 
-        # 3. Send Individual Bank Notice PDFs
+        # 3. Send ALL Individual Bank Notice PDFs (NO 5-LIMIT: Send all generated notices!)
         pdf_dir = os.path.join(case_dir, "Notice_PDF_Files")
         sent_pdf_count = 0
         if os.path.isdir(pdf_dir):
-            pdfs = [os.path.join(pdf_dir, f) for f in os.listdir(pdf_dir) if f.endswith(".pdf")]
-            # Send up to first 5 primary notices directly
-            for p in pdfs[:5]:
-                send_whatsapp_media(sender, p, caption=f"📑 {os.path.basename(p)}")
+            pdfs = sorted([os.path.join(pdf_dir, f) for f in os.listdir(pdf_dir) if f.endswith(".pdf")])
+            for idx, p in enumerate(pdfs, 1):
+                bname = os.path.basename(p)
+                send_whatsapp_media(sender, p, caption=f"📑 [{idx}/{len(pdfs)}] {bname}")
                 sent_pdf_count += 1
                 time.sleep(1)
 
-        # 4. Send Sample ATM CCTV Notice
-        atm_notices = glob.glob(os.path.join(case_dir, "Notice_DOCX_Files", "Notice_CCTV_ATM*.docx"))
-        if atm_notices:
-            send_whatsapp_media(sender, atm_notices[0], caption=f"🏧 एटीएम सीसीटीवी फुटेज नोटिस: {os.path.basename(atm_notices[0])}")
+        # 4. Send ALL ATM CCTV Notices (DOCX)
+        docx_dir = os.path.join(case_dir, "Notice_DOCX_Files")
+        sent_atm_count = 0
+        if os.path.isdir(docx_dir):
+            atm_notices = sorted(glob.glob(os.path.join(docx_dir, "Notice_CCTV_ATM*.docx")))
+            for idx, atm in enumerate(atm_notices, 1):
+                bname = os.path.basename(atm)
+                send_whatsapp_media(sender, atm, caption=f"🏧 [{idx}/{len(atm_notices)}] CCTV नोटिस: {bname}")
+                sent_atm_count += 1
+                time.sleep(1)
 
+        # 5. Create & Send Complete ZIP Bundle (Everything in 1 Tap)
+        zip_bundle = create_case_zip_bundle(case_dir)
+        if zip_bundle and os.path.exists(zip_bundle):
+            send_whatsapp_media(
+                sender,
+                zip_bundle,
+                caption=f"📦 सम्पूर्ण केस बंडल (ZIP): सभी बैंक व ATM नोटिस, कंबाइंड DOCX, 3D चार्ट व केस डायरी एक साथ डाउनलोड करें।"
+            )
+
+        # WhatsApp Dispatch Summary
         send_whatsapp_text(
             sender,
-            f"📁 *संपूर्ण केस दस्तावेज़ सर्वर पर सुरक्षित हैं:*\n"
-            f"📂 फोल्डर: {os.path.basename(case_dir)}\n"
-            f"📑 कुल बैंक नोटिस PDFs: {sent_pdf_count}\n"
-            f"📄 कंबाइंड नोटिस: Combine_Notice_All_Banks_{notice_no}.docx\n"
-            f"🏧 सीसीटीवी नोटिस: तैयार\n\n"
-            f"✨ *नया केस शुरू करने के लिए कभी भी 'Start' लिखें या नई PDF भेजें।*"
+            f"📁 *व्हाट्सएप डिलीवरी पूर्ण!*\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"• *केस संदर्भ*: {ref_str}\n"
+            f"• *आईओ*: {io_name}\n"
+            f"• *बैंक नोटिस (PDF)*: {sent_pdf_count} फाइल्स प्रेषित\n"
+            f"• *ATM CCTV नोटिस*: {sent_atm_count} फाइल्स प्रेषित\n"
+            f"• *कंबाइंड नोटिस*: 1 DOCX प्रेषित\n"
+            f"• *ऑल-इन-वन ZIP*: प्रेषित\n"
+            f"━━━━━━━━━━━━━━━━━━"
         )
+
+        # ----------------------------------------------------------------------------------
+        # 6. TRIGGER AUTOMATIC NODAL EMAIL DISPATCH VIA GMAIL
+        # ----------------------------------------------------------------------------------
+        try:
+            send_whatsapp_text(
+                sender,
+                "📧 *ईमेल ऑटोमेशन प्रारंभ:*\n"
+                "सभी बैंक नोडल अधिकारियों (NIC Mail Forwarding: rajendra.28082016@delhipolice.gov.in) को Gmail द्वारा 15-15 सेकंड के अंतराल पर नोटिस भेजे जा रहे हैं..."
+            )
+            from email_dispatch_agent import EmailDispatchAgent
+            email_agent = EmailDispatchAgent()
+            email_results = email_agent.dispatch_case_notices(
+                case_dir_or_ack=case_dir,
+                provider="gmail",
+                mode="forward_to_nic",
+                dry_run=False
+            )
+            success_emails = sum(1 for r in email_results if 'SUCCESS' in r.get('status', ''))
+            
+            send_whatsapp_text(
+                sender,
+                f"✅ *ईमेल ऑटोमेशन सफलतापूर्वक संपन्न!*\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"• *सफलतापूर्वक प्रेषित*: {success_emails}/{len(email_results)} बैंक नोटिस ईमेल\n"
+                f"• *प्रेषक*: gkncyber1262@gmail.com\n"
+                f"• *गंतव्य*: rajendra.28082016@delhipolice.gov.in\n"
+                f"• *नोटिस बॉडी*: HTML + PDF अटैचमेंट\n"
+                f"━━━━━━━━━━━━━━━━━━\n\n"
+                f"✨ *नया केस शुरू करने के लिए कभी भी 'Start' लिखें या नई PDF भेजें।*"
+            )
+        except Exception as err_mail:
+            print(f"[Email Dispatch Error]: {err_mail}")
+            send_whatsapp_text(sender, f"⚠️ ईमेल प्रेषण में त्रुटि: {str(err_mail)}")
 
     except Exception as e:
         import traceback
@@ -342,7 +424,7 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         greeting = (
             "👮‍♂️ *नमस्ते सर! दिल्ली पुलिस NCRP साइबर अपराध अन्वेषण ऑटोमेशन में आपका स्वागत है।*\n\n"
             "कृपया अपनी *NCRP शिकायत की PDF फ़ाइल* यहाँ WhatsApp पर भेजें।\n"
-            "मैं तुरंत मनी ट्रेल का विश्लेषण कर सभी बैंकों के नोटिस व 3D फ्लोचार्ट तैयार कर दूंगा।"
+            "मैं तुरंत मनी ट्रेल का विश्लेषण कर सभी बैंकों के नोटिस, कंबाइंड DOCX, 3D फ्लोचार्ट व ईमेल ऑटोमेशन प्रारंभ कर दूंगा।"
         )
         send_whatsapp_text(sender, greeting)
         return {"status": "prompted_for_pdf"}
@@ -392,8 +474,8 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
             f"• *होल्ड राशि*: Rs. {fin.get('total_lien_amount')}\n"
             f"• *बैंक लेयर्स*: 1 से 5 (CCTV व चेक पूर्णतः बहिष्कृत)\n"
             f"━━━━━━━━━━━━━━━━━━\n\n"
-            f"📌 *कृपया जांच अधिकारी (IO) का चयन करें:*\n"
-            f"*[1]* SI ARVIND KUMAR (हस्ताक्षर: arvind.png)\n"
+            f"📌 *[सवाल 1/3] कृपया जांच अधिकारी (IO) का चयन करें:*\n"
+            f"*[1]* SI ARVIND KUMAR (हस्ताक्षर: arvind.png) [Default]\n"
             f"*[2]* SI RENU (हस्ताक्षर: renu sign.png)\n"
             f"*[3]* HC RAJENDRA (हस्ताक्षर: rajendra sign.png)\n\n"
             f"👉 उत्तर में केवल *1*, *2* या *3* लिखकर भेजें:"
@@ -402,7 +484,7 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         return {"status": "pdf_received_awaiting_io"}
 
     # 3. Handle IO Selection (State 2 or direct 1/2/3 selection)
-    if session.get("state") == 2 or text.strip() in ["1", "2", "3"]:
+    if session.get("state") == 2 or (session.get("pdf_path") and text.strip() in ["1", "2", "3"]):
         io_choice = text.strip()
         io_name = "SI ARVIND KUMAR"
         if io_choice == "2":
@@ -411,18 +493,62 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
             io_name = "HC RAJENDRA"
 
         session["io_name"] = io_name
-        session["state"] = 3
+        session["state"] = "fir_choice"
 
-        prompt_notice_no = (
+        prompt_fir = (
             f"✅ चयनित जांच अधिकारी: *{io_name}*\n\n"
-            f"📌 *नोटिस नंबर दर्ज करें:*\n"
+            f"📌 *[सवाल 2/3] केस संदर्भ (Case Reference):*\n"
+            f"क्या इस मामले में FIR दर्ज हो चुकी है?\n"
+            f"*[1]* नहीं - केवल NCRP शिकायत है (Sec 94 BNSS Notice) [Default]\n"
+            f"*[2]* हाँ - FIR दर्ज हो चुकी है (FIR No. दर्ज करें)\n\n"
+            f"👉 उत्तर में केवल *1* या *2* भेजें (डिफ़ॉल्ट हेतु 1 भेजें):"
+        )
+        send_whatsapp_text(sender, prompt_fir)
+        return {"status": "awaiting_fir_choice"}
+
+    # 4. Handle FIR Choice
+    if session.get("state") == "fir_choice":
+        fir_opt = text.strip().lower()
+        if fir_opt in ["2", "yes", "y", "haan", "fir"]:
+            session["state"] = "fir_number"
+            prompt_fir_num = (
+                "📝 *कृपया FIR नंबर दर्ज करें:*\n"
+                "(उदाहरण: 45/2026 या 12/2026 लिखकर भेजें)"
+            )
+            send_whatsapp_text(sender, prompt_fir_num)
+            return {"status": "awaiting_fir_number"}
+        else:
+            # Default: No FIR (NCRP Acknowledgement Only)
+            session["fir_details"] = {"is_fir": False}
+            session["state"] = "notice_no"
+            prompt_notice_no = (
+                "📌 *[सवाल 3/3] नोटिस नंबर दर्ज करें:*\n"
+                "डिफ़ॉल्ट नोटिस नंबर *5744* रखने के लिए केवल *Y* भेजें, या अपना इच्छित नोटिस नंबर टाइप करें (उदा. 5745):"
+            )
+            send_whatsapp_text(sender, prompt_notice_no)
+            return {"status": "awaiting_notice_no"}
+
+    # 5. Handle FIR Number Input
+    if session.get("state") == "fir_number":
+        fir_no_input = text.strip()
+        session["fir_details"] = {
+            "is_fir": True,
+            "fir_no": fir_no_input,
+            "fir_date": datetime.datetime.now().strftime("%d/%m/%Y"),
+            "fir_sections": "318(4) BNS & 66D IT Act",
+            "police_station": "CYBER POLICE STATION NORTH DISTRICT"
+        }
+        session["state"] = "notice_no"
+        prompt_notice_no = (
+            f"✅ दर्ज FIR नंबर: *{fir_no_input}*\n\n"
+            f"📌 *[सवाल 3/3] नोटिस नंबर दर्ज करें:*\n"
             f"डिफ़ॉल्ट नोटिस नंबर *5744* रखने के लिए केवल *Y* भेजें, या अपना इच्छित नोटिस नंबर टाइप करें (उदा. 5745):"
         )
         send_whatsapp_text(sender, prompt_notice_no)
         return {"status": "awaiting_notice_no"}
 
-    # 4. Handle Notice Number & Trigger Execution
-    if session.get("state") == 3 or (session.get("pdf_path") and (text.strip().isdigit() or text.strip().lower() in ["y", "yes", "ok"])):
+    # 6. Handle Notice Number & Trigger Full Execution
+    if session.get("state") == "notice_no" or (session.get("pdf_path") and (text.strip().isdigit() or text.strip().lower() in ["y", "yes", "ok"])):
         ans_num = text.strip()
         notice_no = 5744
         if ans_num.isdigit():
@@ -434,13 +560,14 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
             pdf_path = sample_pdf
 
         io_name = session.get("io_name", "SI ARVIND KUMAR")
+        fir_details = session.get("fir_details", {"is_fir": False})
         session["state"] = 0  # Reset session
 
         # Launch processing in background thread
-        background_tasks.add_task(process_case_background, sender, pdf_path, io_name, notice_no)
-        return {"status": "processing_started", "notice_no": notice_no, "io": io_name}
+        background_tasks.add_task(process_case_background, sender, pdf_path, io_name, notice_no, fir_details)
+        return {"status": "processing_started", "notice_no": notice_no, "io": io_name, "fir": fir_details}
 
-    # 5. Default fallback
+    # 7. Default fallback
     send_whatsapp_text(sender, "नमस्ते सर! नया केस शुरू करने के लिए कृपया *Start* लिखें या अपनी NCRP शिकायत की PDF फ़ाइल यहाँ भेजें।")
     return {"status": "help_sent"}
 
