@@ -58,6 +58,25 @@ if os.path.exists(WA_CONFIG_FILE):
     except Exception:
         pass
 
+
+def get_gateway_credentials():
+    """Extracts active gateway and credentials safely from config."""
+    gateway = WA_CONFIG.get("active_gateway") or WA_CONFIG.get("gateway") or "ultramsg"
+    gateways = WA_CONFIG.get("gateways", {})
+    
+    # UltraMsg
+    um = gateways.get("ultramsg") or WA_CONFIG.get("ultramsg") or {}
+    um_instance = um.get("instance_id") or WA_CONFIG.get("instance_id", "instance196018")
+    um_token = um.get("token") or WA_CONFIG.get("token", "hc9tgxc274xe56s0")
+    
+    # GreenAPI
+    ga = gateways.get("green_api") or gateways.get("greenapi") or WA_CONFIG.get("greenapi") or {}
+    ga_inst = ga.get("id_instance") or ga.get("idInstance") or ""
+    ga_token = ga.get("api_token_instance") or ga.get("api_token") or ""
+    
+    return gateway.lower(), um_instance, um_token, ga_inst, ga_token
+
+
 # In-memory session tracking per phone number
 USER_SESSIONS: Dict[str, Dict[str, Any]] = {}
 
@@ -65,31 +84,27 @@ USER_SESSIONS: Dict[str, Dict[str, Any]] = {}
 def send_whatsapp_text(to_number: str, text: str):
     """Sends a text message via configured WhatsApp Gateway (UltraMsg / Green API)."""
     clean_phone = re.sub(r'[^0-9]', '', str(to_number))
-    gateway = WA_CONFIG.get("gateway", "ultramsg").lower()
+    gateway, um_instance, um_token, ga_inst, ga_token = get_gateway_credentials()
 
-    if gateway == "ultramsg":
-        instance_id = WA_CONFIG.get("ultramsg", {}).get("instance_id")
-        token = WA_CONFIG.get("ultramsg", {}).get("token")
-        if instance_id and token:
-            url = f"https://api.ultramsg.com/{instance_id}/messages/chat"
-            payload = {"token": token, "to": clean_phone, "body": text}
-            try:
-                requests.post(url, data=payload, timeout=15)
-                return True
-            except Exception as e:
-                print(f"[WA Error] Text send failed: {e}")
+    if gateway == "ultramsg" and um_instance and um_token:
+        url = f"https://api.ultramsg.com/{um_instance}/messages/chat"
+        payload = {"token": um_token, "to": clean_phone, "body": text}
+        try:
+            r = requests.post(url, data=payload, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+            print(f"[WA Send] Text to {clean_phone}: HTTP {r.status_code}")
+            return True
+        except Exception as e:
+            print(f"[WA Error] Text send failed: {e}")
 
-    elif gateway == "greenapi":
-        id_inst = WA_CONFIG.get("greenapi", {}).get("id_instance")
-        token = WA_CONFIG.get("greenapi", {}).get("api_token")
-        if id_inst and token:
-            url = f"https://api.green-api.com/waInstance{id_inst}/sendMessage/{token}"
-            payload = {"chatId": f"{clean_phone}@c.us", "message": text}
-            try:
-                requests.post(url, json=payload, timeout=15)
-                return True
-            except Exception as e:
-                print(f"[WA Error] Text send failed: {e}")
+    elif gateway in ["greenapi", "green_api"] and ga_inst and ga_token:
+        url = f"https://api.green-api.com/waInstance{ga_inst}/sendMessage/{ga_token}"
+        payload = {"chatId": f"{clean_phone}@c.us", "message": text}
+        try:
+            r = requests.post(url, json=payload, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+            print(f"[GreenAPI Send] Text to {clean_phone}: HTTP {r.status_code}")
+            return True
+        except Exception as e:
+            print(f"[WA Error] Text send failed: {e}")
 
     print(f"[DRY-RUN WA TEXT to {to_number}]:\n{text}\n")
     return False
@@ -101,27 +116,25 @@ def send_whatsapp_document(to_number: str, file_path: str, caption: str = ""):
     if not os.path.exists(file_path):
         return False
 
-    gateway = WA_CONFIG.get("gateway", "ultramsg").lower()
+    gateway, um_instance, um_token, ga_inst, ga_token = get_gateway_credentials()
     fname = os.path.basename(file_path)
 
-    if gateway == "ultramsg":
-        instance_id = WA_CONFIG.get("ultramsg", {}).get("instance_id")
-        token = WA_CONFIG.get("ultramsg", {}).get("token")
-        if instance_id and token:
-            url = f"https://api.ultramsg.com/{instance_id}/messages/document"
-            payload = {
-                "token": token,
-                "to": clean_phone,
-                "filename": fname,
-                "caption": caption
-            }
-            try:
-                with open(file_path, "rb") as f:
-                    files = {"file": f}
-                    requests.post(url, data=payload, files=files, timeout=60)
-                return True
-            except Exception as e:
-                print(f"[WA Error] Document send failed: {e}")
+    if gateway == "ultramsg" and um_instance and um_token:
+        url = f"https://api.ultramsg.com/{um_instance}/messages/document"
+        payload = {
+            "token": um_token,
+            "to": clean_phone,
+            "filename": fname,
+            "caption": caption
+        }
+        try:
+            with open(file_path, "rb") as f:
+                files = {"file": (fname, f)}
+                r = requests.post(url, data=payload, files=files, headers={"User-Agent": "Mozilla/5.0"}, timeout=60)
+                print(f"[WA Send] Doc {fname} to {clean_phone}: HTTP {r.status_code}")
+            return True
+        except Exception as e:
+            print(f"[WA Error] Document send failed: {e}")
 
     print(f"[DRY-RUN WA DOC to {to_number}]: {fname} ({caption})")
     return False
@@ -196,21 +209,43 @@ def home():
     }
 
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "service": "NCRP WhatsApp Gateway", "port": 5005}
+
+
 @app.post("/webhook/whatsapp")
+@app.post("/webhook/n8n")
 async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Main webhook receiver for incoming WhatsApp messages and PDF uploads.
+    Handles UltraMsg, GreenAPI, and n8n forwarded payloads seamlessly.
     """
     try:
         body = await request.json()
     except Exception:
         body = {}
 
+    # Support UltraMsg wrapped 'data' payload or flat JSON
+    data = body.get("data", body) if isinstance(body.get("data"), dict) else body
+
+    # Ignore outgoing messages sent by the bot itself
+    if data.get("fromMe") is True or body.get("fromMe") is True:
+        return JSONResponse({"status": "ignored", "reason": "outgoing message from self"})
+
     # Extract sender, text, and media
-    sender = body.get("from") or body.get("chatId") or body.get("sender") or ""
-    text = (body.get("body") or body.get("text") or body.get("message") or "").strip()
-    media_url = body.get("mediaUrl") or body.get("documentUrl") or body.get("file") or ""
-    media_name = body.get("filename") or body.get("caption") or "complaint.pdf"
+    sender = data.get("from") or data.get("chatId") or data.get("sender") or body.get("from") or body.get("sender") or ""
+    msg_type = data.get("type", "chat")
+    text = (data.get("body") or data.get("text") or data.get("message") or body.get("body") or "").strip()
+    
+    # In UltraMsg, document URLs are in data['media'] or data['body'] when type == 'document'
+    media_url = ""
+    if msg_type in ["document", "image", "audio", "video"] or text.startswith("http"):
+        media_url = data.get("media") or data.get("body") or body.get("mediaUrl") or body.get("documentUrl") or ""
+        if media_url.startswith("http"):
+            text = ""  # Clean text so it doesn't collide with commands
+            
+    media_name = data.get("filename") or data.get("caption") or body.get("filename") or "complaint.pdf"
 
     if not sender:
         return JSONResponse({"status": "ignored", "reason": "no sender identified"})
