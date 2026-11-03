@@ -439,11 +439,12 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     sender_clean = re.sub(r'[^0-9]', '', sender)
     print(f"[WA Inbound] From: {sender_clean} | Type: {msg_type} | Text: '{text}' | Media: '{media_url}'")
 
-    session = USER_SESSIONS.setdefault(sender_clean, {"state": 0})
+    session = USER_SESSIONS.setdefault(sender_clean, {"state": "idle"})
+    current_state = session.get("state", "idle")
 
     # 1. Greeting / Reset command
     if text.lower() in ["hi", "hello", "start", "shuru", "reset"]:
-        USER_SESSIONS[sender_clean] = {"state": 1}
+        USER_SESSIONS[sender_clean] = {"state": "awaiting_pdf"}
         greeting = (
             "👮‍♂️ *नमस्ते सर! दिल्ली पुलिस NCRP साइबर अपराध अन्वेषण ऑटोमेशन में आपका स्वागत है।*\n\n"
             "कृपया अपनी *NCRP शिकायत की PDF फ़ाइल* यहाँ WhatsApp पर भेजें।\n"
@@ -452,9 +453,9 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         send_whatsapp_text(sender, greeting)
         return {"status": "prompted_for_pdf"}
 
-    # 2. Handle incoming PDF upload (accept anytime a PDF or document is received)
+    # 2. Handle incoming PDF upload (accept anytime a PDF is uploaded)
     is_pdf_upload = bool(media_url and (media_name.lower().endswith(".pdf") or "pdf" in media_url.lower() or msg_type == "document"))
-    if is_pdf_upload or (session.get("state") == 1 and text.endswith(".pdf")):
+    if is_pdf_upload or (current_state == "awaiting_pdf" and text.endswith(".pdf")):
         clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', media_name)
         if not clean_name.lower().endswith('.pdf'):
             clean_name += '.pdf'
@@ -484,7 +485,7 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         comp = ctx.get("complainant", {})
         fin = ctx.get("financial_summary", {})
 
-        session["state"] = 2
+        session["state"] = "awaiting_io"
         session["pdf_path"] = target_pdf_path
         session["ack_no"] = meta.get("acknowledgement_no", "")
 
@@ -506,17 +507,17 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         send_whatsapp_text(sender, summary_card)
         return {"status": "pdf_received_awaiting_io"}
 
-    # 3. Handle IO Selection (State 2 or direct 1/2/3 selection)
-    if session.get("state") == 2 or (session.get("pdf_path") and text.strip() in ["1", "2", "3"]):
+    # 3. Handle IO Selection (STRICT: only when state is awaiting_io or 2)
+    if current_state in ["awaiting_io", 2, "2"]:
         io_choice = text.strip()
         io_name = "SI ARVIND KUMAR"
-        if io_choice == "2":
+        if io_choice == "2" or "renu" in io_choice.lower():
             io_name = "SI RENU"
-        elif io_choice == "3":
+        elif io_choice == "3" or "rajendra" in io_choice.lower():
             io_name = "HC RAJENDRA"
 
         session["io_name"] = io_name
-        session["state"] = "fir_choice"
+        session["state"] = "awaiting_fir_choice"
 
         prompt_fir = (
             f"✅ चयनित जांच अधिकारी: *{io_name}*\n\n"
@@ -529,11 +530,31 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         send_whatsapp_text(sender, prompt_fir)
         return {"status": "awaiting_fir_choice"}
 
-    # 4. Handle FIR Choice
-    if session.get("state") == "fir_choice":
+    # 4. Handle FIR Choice (STRICT: only when state is awaiting_fir_choice)
+    if current_state == "awaiting_fir_choice":
+        # Check if user passed FIR number directly e.g. "2 (282/26)" or "282/26"
+        m_fir_direct = re.search(r'(\d+[\s/-]+\d+)', text)
+        if m_fir_direct and ("2" in text or "/" in text):
+            fir_no_val = m_fir_direct.group(1).replace(" ", "")
+            session["fir_details"] = {
+                "is_fir": True,
+                "fir_no": fir_no_val,
+                "fir_date": datetime.datetime.now().strftime("%d/%m/%Y"),
+                "fir_sections": "318(4) BNS & 66D IT Act",
+                "police_station": "CYBER POLICE STATION NORTH DISTRICT"
+            }
+            session["state"] = "awaiting_notice_no"
+            prompt_notice_no = (
+                f"✅ दर्ज FIR नंबर: *{fir_no_val}*\n\n"
+                f"📌 *[सवाल 3/4] नोटिस नंबर दर्ज करें:*\n"
+                f"डिफ़ॉल्ट नोटिस नंबर *5744* रखने के लिए केवल *Y* भेजें, या अपना इच्छित नोटिस नंबर टाइप करें (उदा. 5745):"
+            )
+            send_whatsapp_text(sender, prompt_notice_no)
+            return {"status": "awaiting_notice_no"}
+
         fir_opt = text.strip().lower()
         if fir_opt in ["2", "yes", "y", "haan", "fir"]:
-            session["state"] = "fir_number"
+            session["state"] = "awaiting_fir_number"
             prompt_fir_num = (
                 "📝 *कृपया FIR नंबर दर्ज करें:*\n"
                 "(उदाहरण: 45/2026 या 12/2026 लिखकर भेजें)"
@@ -541,9 +562,9 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
             send_whatsapp_text(sender, prompt_fir_num)
             return {"status": "awaiting_fir_number"}
         else:
-            # Default: No FIR (NCRP Acknowledgement Only)
+            # Default: 1 -> No FIR (NCRP Acknowledgement Only)
             session["fir_details"] = {"is_fir": False}
-            session["state"] = "notice_no"
+            session["state"] = "awaiting_notice_no"
             prompt_notice_no = (
                 "📌 *[सवाल 3/4] नोटिस नंबर दर्ज करें:*\n"
                 "डिफ़ॉल्ट नोटिस नंबर *5744* रखने के लिए केवल *Y* भेजें, या अपना इच्छित नोटिस नंबर टाइप करें (उदा. 5745):"
@@ -551,8 +572,8 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
             send_whatsapp_text(sender, prompt_notice_no)
             return {"status": "awaiting_notice_no"}
 
-    # 5. Handle FIR Number Input
-    if session.get("state") == "fir_number":
+    # 5. Handle FIR Number Input (STRICT: only when state is awaiting_fir_number)
+    if current_state == "awaiting_fir_number":
         fir_no_input = text.strip()
         session["fir_details"] = {
             "is_fir": True,
@@ -561,7 +582,7 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
             "fir_sections": "318(4) BNS & 66D IT Act",
             "police_station": "CYBER POLICE STATION NORTH DISTRICT"
         }
-        session["state"] = "notice_no"
+        session["state"] = "awaiting_notice_no"
         prompt_notice_no = (
             f"✅ दर्ज FIR नंबर: *{fir_no_input}*\n\n"
             f"📌 *[सवाल 3/4] नोटिस नंबर दर्ज करें:*\n"
@@ -570,21 +591,21 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         send_whatsapp_text(sender, prompt_notice_no)
         return {"status": "awaiting_notice_no"}
 
-    # 6. Handle Notice Number -> Proceed to Email Question
-    if session.get("state") == "notice_no" or (session.get("pdf_path") and (text.strip().isdigit() or text.strip().lower() in ["y", "yes", "ok"])):
+    # 6. Handle Notice Number (STRICT: only when state is awaiting_notice_no)
+    if current_state == "awaiting_notice_no":
         ans_num = text.strip()
         notice_no = 5744
         if ans_num.isdigit():
             notice_no = int(ans_num)
 
         session["notice_no"] = notice_no
-        session["state"] = "email_choice"
+        session["state"] = "awaiting_email_choice"
 
         prompt_email = (
             f"✅ चयनित नोटिस नंबर: *{notice_no}*\n\n"
             f"📧 *[सवाल 4/4] बैंक नोटिस ईमेल ऑटोमेशन:*\n"
             f"क्या सभी बैंक नोटिस ईमेल द्वारा भी भेजने हैं?\n"
-            f"(ईमेल बॉडी में DOCX का पूरा टेक्स्ट रहेगा और साथ में हस्ताक्षरित PDF फ़ाइल अटैच होगी)\n\n"
+            f"(ईमेल बॉडी में DOCX का पूरा ड्राफ्ट रहेगा और साथ में हस्ताक्षरित PDF फ़ाइल अटैच होगी)\n\n"
             f"*[1]* हाँ - rajendra.28082016@delhipolice.gov.in पर भेजें (Gmail द्वारा) [Default]\n"
             f"*[2]* हाँ - किसी अन्य ईमेल पते पर भेजें (अपना ईमेल दर्ज करें)\n"
             f"*[3]* नहीं - ईमेल न भेजें (केवल व्हाट्सएप पर नोटिस चाहिए)\n\n"
@@ -593,15 +614,15 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         send_whatsapp_text(sender, prompt_email)
         return {"status": "awaiting_email_choice"}
 
-    # 7. Handle Email Choice
-    if session.get("state") == "email_choice":
+    # 7. Handle Email Choice (STRICT: only when state is awaiting_email_choice)
+    if current_state == "awaiting_email_choice":
         em_choice = text.strip().lower()
 
         if em_choice in ["2", "custom", "other"]:
             session["state"] = "awaiting_custom_email"
             prompt_custom = (
                 "📝 *कृपया गंतव्य ईमेल पता दर्ज करें:*\n"
-                "(उदाहरण: rajendra.28082016@delhipolice.gov.in या yourname@gmail.com लिखकर भेजें)"
+                "(उदाहरण: rajendra.28082016@delhipolice.gov.in या yourname@gmail.com लिखकर भेजें):"
             )
             send_whatsapp_text(sender, prompt_custom)
             return {"status": "awaiting_custom_email"}
@@ -615,19 +636,22 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
             email_settings = {"send_email": True, "target_email": "rajendra.28082016@delhipolice.gov.in"}
             return trigger_execution(sender, session, email_settings, background_tasks)
 
-    # 8. Handle Custom Email Input
-    if session.get("state") == "awaiting_custom_email":
+    # 8. Handle Custom Email Input (STRICT: only when state is awaiting_custom_email)
+    if current_state == "awaiting_custom_email":
         custom_mail = text.strip()
         # Basic email format check
         if "@" in custom_mail and "." in custom_mail:
             email_settings = {"send_email": True, "target_email": custom_mail}
             return trigger_execution(sender, session, email_settings, background_tasks)
         else:
-            send_whatsapp_text(sender, "⚠️ अमान्य ईमेल पता! कृपया सही ईमेल पता दर्ज करें (उदा. abc@gmail.com):")
+            send_whatsapp_text(sender, "⚠️ अमान्य ईमेल पता! कृपया सही ईमेल पता दर्ज करें (उदा. yourname@gmail.com):")
             return {"status": "invalid_email"}
 
-    # 9. Default fallback
-    send_whatsapp_text(sender, "नमस्ते सर! नया केस शुरू करने के लिए कृपया *Start* लिखें या अपनी NCRP शिकायत की PDF फ़ाइल यहाँ भेजें।")
+    # 9. Fallback if user types arbitrary message outside flow
+    if session.get("pdf_path"):
+        send_whatsapp_text(sender, "नमस्ते सर! जांच जारी रखने के लिए कृपया ऊपर पूछे गए प्रश्न का उत्तर दें, या नया केस शुरू करने के लिए *Start* लिखें।")
+    else:
+        send_whatsapp_text(sender, "👮‍♂️ नमस्ते सर! NCRP साइबर अपराध अन्वेषण शुरू करने के लिए कृपया अपनी *NCRP शिकायत की PDF फ़ाइल* यहाँ भेजें या *Start* लिखें।")
     return {"status": "help_sent"}
 
 
