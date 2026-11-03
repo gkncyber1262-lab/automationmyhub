@@ -7,15 +7,15 @@
 Architecture:
   1. Inbound Webhook:
      - Listens on /webhook/whatsapp or /webhook/n8n for incoming WhatsApp messages/PDFs.
-     - Supports UltraMsg, Green API, Meta WhatsApp Cloud API, and n8n Workflows.
+     - UltraMsg native webhook payload (nested 'data' with from, body, type, media).
   2. Multi-turn State Machine per Officer (Phone Number):
      - Step 0 (Start): Greet IO & prompt for NCRP Complaint PDF.
      - Step 1 (PDF Upload): Downloads PDF, parses fraud metrics, sends summary card.
-     - Step 2 (IO & Scheme Select): Offers 1-click IO selection (SI Arvind Kumar, SI Renu, HC Rajendra).
-     - Step 3 (Auto-Execution): Generates Bank Notices, ATM CCTV Notices, Combine DOCX, 3D Radar.
-     - Step 4 (Document Dispatch): Automatically attaches & sends documents directly on WhatsApp.
-  3. Optional Email Trigger:
-     - Dispatches notices to official Bank Nodal Officers via email_dispatch_agent.
+     - Step 2 (IO Select): [1] SI Arvind Kumar, [2] SI Renu, [3] HC Rajendra.
+     - Step 3 (Notice No): Asks for starting notice number (default: 5744).
+     - Step 4 (Execution): Runs full case pipeline with pythoncom CoInitialize in thread.
+     - Step 5 (Document Dispatch): Uploads generated documents to UltraMsg media CDN and
+       delivers DOCX, PDF, and 3D visualizers directly into the WhatsApp conversation.
 ========================================================================================
 """
 
@@ -25,13 +25,14 @@ import json
 import time
 import re
 import shutil
+import glob
 import datetime
 import requests
 from typing import Dict, Any, Optional
 
 import uvicorn
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
@@ -42,21 +43,14 @@ from ncrp_master_agent import NCRPUnifiedAgent
 app = FastAPI(
     title="NCRP Master Agent - WhatsApp Automation Webhook Service",
     description="Automated WhatsApp bot for NCRP complaint analysis and notice dispatch",
-    version="3.0.0"
+    version="3.1.0"
 )
 
 # Agent instance
 agent = NCRPUnifiedAgent(base_dir=BASE_DIR)
 
-# Load WhatsApp credentials if available
+# Config path
 WA_CONFIG_FILE = os.path.join(BASE_DIR, "config", "whatsapp_credentials.json")
-WA_CONFIG = {}
-if os.path.exists(WA_CONFIG_FILE):
-    try:
-        with open(WA_CONFIG_FILE, "r", encoding="utf-8") as f:
-            WA_CONFIG = json.load(f)
-    except Exception:
-        pass
 
 
 def get_gateway_credentials():
@@ -67,9 +61,7 @@ def get_gateway_credentials():
             with open(WA_CONFIG_FILE, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
         except Exception:
-            cfg = WA_CONFIG
-    else:
-        cfg = WA_CONFIG
+            pass
 
     gateway = cfg.get("active_gateway") or cfg.get("gateway") or "ultramsg"
     gateways = cfg.get("gateways", {})
@@ -120,40 +112,80 @@ def send_whatsapp_text(to_number: str, text: str):
     return False
 
 
-def send_whatsapp_document(to_number: str, file_path: str, caption: str = ""):
-    """Sends a document (DOCX/PDF) or image via WhatsApp Gateway."""
+def send_whatsapp_media(to_number: str, file_path: str, caption: str = "", is_image: bool = False):
+    """
+    Sends document or image via UltraMsg / GreenAPI.
+    For UltraMsg:
+      1. Uploads file to /media/upload via multipart/form-data.
+      2. Uses the hosted URL with /messages/document or /messages/image.
+    """
     clean_phone = re.sub(r'[^0-9]', '', str(to_number))
     if not os.path.exists(file_path):
+        print(f"[WA Media Error] File does not exist: {file_path}")
         return False
 
     gateway, um_instance, um_token, ga_inst, ga_token = get_gateway_credentials()
     fname = os.path.basename(file_path)
 
     if gateway == "ultramsg" and um_instance and um_token:
-        url = f"https://api.ultramsg.com/{um_instance}/messages/document"
-        payload = {
-            "token": um_token,
-            "to": clean_phone,
-            "filename": fname,
-            "caption": caption
-        }
+        # Step 1: Upload media to UltraMsg S3 CDN
+        upload_url = f"https://api.ultramsg.com/{um_instance}/media/upload"
         try:
             with open(file_path, "rb") as f:
-                files = {"file": (fname, f)}
-                r = requests.post(url, data=payload, files=files, headers={"User-Agent": "Mozilla/5.0"}, timeout=60)
-                print(f"[WA Send] Doc {fname} to {clean_phone}: HTTP {r.status_code}")
+                r_up = requests.post(
+                    upload_url,
+                    data={"token": um_token},
+                    files={"file": (fname, f)},
+                    headers={"User-Agent": "Mozilla/5.0"},
+                    timeout=60
+                )
+            up_data = r_up.json()
+            media_url = up_data.get("success") or up_data.get("url") or up_data.get("response", {}).get("url")
+            if not media_url:
+                print(f"[WA Media Upload Failed] {fname}: {r_up.text}")
+                return False
+
+            # Step 2: Send document or image message
+            if is_image or fname.lower().endswith(('.png', '.jpg', '.jpeg')):
+                endpoint = f"https://api.ultramsg.com/{um_instance}/messages/image"
+                payload = {
+                    "token": um_token,
+                    "to": clean_phone,
+                    "image": media_url,
+                    "caption": caption
+                }
+            else:
+                endpoint = f"https://api.ultramsg.com/{um_instance}/messages/document"
+                payload = {
+                    "token": um_token,
+                    "to": clean_phone,
+                    "filename": fname,
+                    "document": media_url,
+                    "caption": caption
+                }
+
+            r_msg = requests.post(endpoint, data=payload, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+            print(f"[WA Media Sent] {fname} to {clean_phone}: HTTP {r_msg.status_code}")
             return True
         except Exception as e:
-            print(f"[WA Error] Document send failed: {e}")
+            print(f"[WA Error] Media send failed for {fname}: {e}")
+            return False
 
-    print(f"[DRY-RUN WA DOC to {to_number}]: {fname} ({caption})")
+    print(f"[DRY-RUN WA MEDIA to {to_number}]: {fname} ({caption})")
     return False
 
 
 def process_case_background(sender: str, pdf_path: str, io_name: str, notice_no: int):
     """Executes the pipeline in background and dispatches files to WhatsApp."""
+    # Initialize COM apartment for this thread (required for MS Word DOCX->PDF export)
     try:
-        send_whatsapp_text(sender, "⏳ जांच प्रगति पर है... बैंक नोटिस, कंबाइंड DOCX, 3D फ्लोचार्ट और केस डायरी तैयार की जा रही है। कृपया 20-30 सेकंड प्रतीक्षा करें...")
+        import pythoncom
+        pythoncom.CoInitialize()
+    except Exception as e:
+        print(f"[COM Init Warning]: {e}")
+
+    try:
+        send_whatsapp_text(sender, "⏳ जांच प्रगति पर है... बैंक नोटिस (DOCX व PDF), कंबाइंड DOCX, 3D फ्लोचार्ट और केस डायरी तैयार की जा रही है। कृपया 20-30 सेकंड प्रतीक्षा करें...")
 
         # Resolve IO details
         io_mobile = "8750871987"
@@ -169,7 +201,7 @@ def process_case_background(sender: str, pdf_path: str, io_name: str, notice_no:
             "mobile": io_mobile
         }
 
-        # Run pipeline
+        # Run unified master pipeline
         res = agent.run_case_pipeline(
             case_file_or_target=pdf_path,
             fir_details={"is_fir": False},
@@ -179,34 +211,72 @@ def process_case_background(sender: str, pdf_path: str, io_name: str, notice_no:
             sign_mode="both"
         )
 
-        ack = res.get("acknowledgement_no", "")
-        case_dir = os.path.join(agent.output_dir, f"Case_{ack}")
+        ack = res.get("acknowledgement_no") or res.get("case_meta", {}).get("acknowledgement_no", "")
+        case_dir = res.get("case_dir")
 
-        # Send completion card
+        # Fallback to search if case_dir was not returned
+        if not case_dir or not os.path.exists(case_dir):
+            if ack:
+                case_dir = os.path.join(agent.output_dir, f"Case_{ack}")
+            if not os.path.exists(case_dir):
+                # Search for latest case folder
+                all_cases = glob.glob(os.path.join(agent.output_dir, "Case_*"))
+                if all_cases:
+                    case_dir = max(all_cases, key=os.path.getmtime)
+
+        print(f"[WA Pipeline Done] Case Dir: {case_dir}")
+
+        # Send completion notification
         send_whatsapp_text(sender, f"✅ सफलता! केस ACK No. {ack} के सभी नोटिस व दस्तावेज़ तैयार कर दिए गए हैं। अब फाइल्स प्रेषित की जा रही हैं...")
 
-        # 1. Send Combine Notice DOCX (Consolidated)
-        combine_docx = os.path.join(case_dir, "combine_notice", f"Combine_Notice_All_Banks_{notice_no}.docx")
-        if os.path.exists(combine_docx):
-            send_whatsapp_document(sender, combine_docx, caption=f"📄 कंबाइंड बैंक नोटिस (Combine Notice #{notice_no}) - सभी बैंकों हेतु एकल DOCX फ़ाइल")
+        # 1. Send Combine Notice DOCX (Consolidated single document for all banks)
+        combine_candidates = glob.glob(os.path.join(case_dir, "combine_notice", "*.docx")) or \
+                             glob.glob(os.path.join(case_dir, "Notice_DOCX_Files", "Combine_Notice*.docx"))
+        if combine_candidates:
+            combine_docx = combine_candidates[0]
+            send_whatsapp_media(sender, combine_docx, caption=f"📄 कंबाइंड बैंक नोटिस (Combine Notice #{notice_no}) - सभी बैंकों हेतु संयुक्त मांग पत्र (केवल DOCX)")
 
-        # 2. Send 3D Money Trail Image
-        radar_img = os.path.join(case_dir, f"forensic_money_trail_3d_{ack}.png")
-        if os.path.exists(radar_img):
-            send_whatsapp_document(sender, radar_img, caption="📊 फोरेंसिक मनी ट्रेल 3D विज़ुअल चार्ट (Layer 1 से Layer 5)")
+        # 2. Send 3D Money Trail Visual Flowchart (PNG)
+        radar_imgs = glob.glob(os.path.join(case_dir, "forensic_money_trail_3d*.png"))
+        if radar_imgs:
+            send_whatsapp_media(sender, radar_imgs[0], caption="📊 फोरेंसिक मनी ट्रेल 3D विज़ुअल चार्ट (लेयर 1 से 5)", is_image=True)
 
         # 3. Send Individual Bank Notice PDFs
         pdf_dir = os.path.join(case_dir, "Notice_PDF_Files")
+        sent_pdf_count = 0
         if os.path.isdir(pdf_dir):
             pdfs = [os.path.join(pdf_dir, f) for f in os.listdir(pdf_dir) if f.endswith(".pdf")]
             # Send up to first 5 primary notices directly
             for p in pdfs[:5]:
-                send_whatsapp_document(sender, p, caption=f"📑 {os.path.basename(p)}")
+                send_whatsapp_media(sender, p, caption=f"📑 {os.path.basename(p)}")
+                sent_pdf_count += 1
+                time.sleep(1)
 
-        send_whatsapp_text(sender, f"📁 संपूर्ण केस दस्तावेज़ सर्वर पर सुरक्षित हैं:\n📂 Case Folder: Case_{ack}/\nकुल तैयार नोटिस: {len(pdfs) if os.path.isdir(pdf_dir) else 0}\n\nनया केस शुरू करने के लिए 'Start' लिखें।")
+        # 4. Send Sample ATM CCTV Notice
+        atm_notices = glob.glob(os.path.join(case_dir, "Notice_DOCX_Files", "Notice_CCTV_ATM*.docx"))
+        if atm_notices:
+            send_whatsapp_media(sender, atm_notices[0], caption=f"🏧 एटीएम सीसीटीवी फुटेज नोटिस: {os.path.basename(atm_notices[0])}")
+
+        send_whatsapp_text(
+            sender,
+            f"📁 *संपूर्ण केस दस्तावेज़ सर्वर पर सुरक्षित हैं:*\n"
+            f"📂 फोल्डर: {os.path.basename(case_dir)}\n"
+            f"📑 कुल बैंक नोटिस PDFs: {sent_pdf_count}\n"
+            f"📄 कंबाइंड नोटिस: Combine_Notice_All_Banks_{notice_no}.docx\n"
+            f"🏧 सीसीटीवी नोटिस: तैयार\n\n"
+            f"✨ *नया केस शुरू करने के लिए कभी भी 'Start' लिखें या नई PDF भेजें।*"
+        )
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         send_whatsapp_text(sender, f"❌ केस निष्पादन में त्रुटि आई: {str(e)}")
+    finally:
+        try:
+            import pythoncom
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
 
 
 @app.get("/")
@@ -214,13 +284,14 @@ def home():
     return {
         "service": "NCRP Unified Master Agent - WhatsApp Automation Gateway",
         "status": "ONLINE",
-        "supported_gateways": ["UltraMsg", "Green API", "Meta WhatsApp Cloud API", "n8n Webhook"],
+        "instance": "instance196090",
+        "gateway": "UltraMsg",
         "time": datetime.datetime.now().isoformat()
     }
 
 
 @app.get("/health")
-def health_check():
+def health():
     return {"status": "ok", "service": "NCRP WhatsApp Gateway", "port": 5005}
 
 
@@ -247,48 +318,56 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     sender = data.get("from") or data.get("chatId") or data.get("sender") or body.get("from") or body.get("sender") or ""
     msg_type = data.get("type", "chat")
     text = (data.get("body") or data.get("text") or data.get("message") or body.get("body") or "").strip()
-    
+
     # In UltraMsg, document URLs are in data['media'] or data['body'] when type == 'document'
     media_url = ""
     if msg_type in ["document", "image", "audio", "video"] or text.startswith("http"):
         media_url = data.get("media") or data.get("body") or body.get("mediaUrl") or body.get("documentUrl") or ""
         if media_url.startswith("http"):
             text = ""  # Clean text so it doesn't collide with commands
-            
+
     media_name = data.get("filename") or data.get("caption") or body.get("filename") or "complaint.pdf"
 
     if not sender:
         return JSONResponse({"status": "ignored", "reason": "no sender identified"})
 
     sender_clean = re.sub(r'[^0-9]', '', sender)
+    print(f"[WA Inbound] From: {sender_clean} | Type: {msg_type} | Text: '{text}' | Media: '{media_url}'")
+
     session = USER_SESSIONS.setdefault(sender_clean, {"state": 0})
 
-    # Greeting / Reset command
+    # 1. Greeting / Reset command
     if text.lower() in ["hi", "hello", "start", "shuru", "reset"]:
         USER_SESSIONS[sender_clean] = {"state": 1}
         greeting = (
             "👮‍♂️ *नमस्ते सर! दिल्ली पुलिस NCRP साइबर अपराध अन्वेषण ऑटोमेशन में आपका स्वागत है।*\n\n"
-            "कृपया अपनी *NCRP शिकायत की PDF फ़ाइल* यहाँ WhatsApp पर अपलोड करें।\n"
-            "मैं तुरंत मनी ट्रेल का विश्लेषण कर सभी बैंकों के नोटिस व 3D चार्ट तैयार कर दूंगा।"
+            "कृपया अपनी *NCRP शिकायत की PDF फ़ाइल* यहाँ WhatsApp पर भेजें।\n"
+            "मैं तुरंत मनी ट्रेल का विश्लेषण कर सभी बैंकों के नोटिस व 3D फ्लोचार्ट तैयार कर दूंगा।"
         )
         send_whatsapp_text(sender, greeting)
         return {"status": "prompted_for_pdf"}
 
-    # Handle incoming PDF upload
-    if media_url or (session.get("state") == 1 and text.endswith(".pdf")):
-        target_pdf_path = os.path.join(agent.input_dir, f"WA_{int(time.time())}_{media_name}")
-        
+    # 2. Handle incoming PDF upload (accept anytime a PDF or document is received)
+    is_pdf_upload = bool(media_url and (media_name.lower().endswith(".pdf") or "pdf" in media_url.lower() or msg_type == "document"))
+    if is_pdf_upload or (session.get("state") == 1 and text.endswith(".pdf")):
+        clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', media_name)
+        if not clean_name.lower().endswith('.pdf'):
+            clean_name += '.pdf'
+
+        target_pdf_path = os.path.join(agent.input_dir, clean_name)
+
         # Download media if URL provided
         if media_url.startswith("http"):
             try:
-                r = requests.get(media_url, timeout=30)
+                r = requests.get(media_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=45)
                 with open(target_pdf_path, "wb") as f:
                     f.write(r.content)
+                print(f"[WA Download] Saved PDF to {target_pdf_path} ({len(r.content)} bytes)")
             except Exception as e:
                 send_whatsapp_text(sender, f"❌ PDF डाउनलोड करने में विफल: {e}")
                 return {"status": "download_failed"}
         else:
-            # Fallback to sample if testing
+            # Fallback to existing sample in input/
             sample_pdf = os.path.join(agent.input_dir, "AcknowledgementNo_30810260096039.pdf")
             if os.path.exists(sample_pdf):
                 shutil.copy2(sample_pdf, target_pdf_path)
@@ -322,8 +401,8 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         send_whatsapp_text(sender, summary_card)
         return {"status": "pdf_received_awaiting_io"}
 
-    # Handle IO Selection
-    if session.get("state") == 2:
+    # 3. Handle IO Selection (State 2 or direct 1/2/3 selection)
+    if session.get("state") == 2 or text.strip() in ["1", "2", "3"]:
         io_choice = text.strip()
         io_name = "SI ARVIND KUMAR"
         if io_choice == "2":
@@ -342,23 +421,27 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         send_whatsapp_text(sender, prompt_notice_no)
         return {"status": "awaiting_notice_no"}
 
-    # Handle Notice Number & Trigger Execution
-    if session.get("state") == 3:
+    # 4. Handle Notice Number & Trigger Execution
+    if session.get("state") == 3 or (session.get("pdf_path") and (text.strip().isdigit() or text.strip().lower() in ["y", "yes", "ok"])):
         ans_num = text.strip()
         notice_no = 5744
         if ans_num.isdigit():
             notice_no = int(ans_num)
 
         pdf_path = session.get("pdf_path")
+        if not pdf_path or not os.path.exists(pdf_path):
+            sample_pdf = os.path.join(agent.input_dir, "AcknowledgementNo_30810260096039.pdf")
+            pdf_path = sample_pdf
+
         io_name = session.get("io_name", "SI ARVIND KUMAR")
         session["state"] = 0  # Reset session
 
-        # Launch processing in background
+        # Launch processing in background thread
         background_tasks.add_task(process_case_background, sender, pdf_path, io_name, notice_no)
         return {"status": "processing_started", "notice_no": notice_no, "io": io_name}
 
-    # Default fallback
-    send_whatsapp_text(sender, "नमस्ते सर! नया केस शुरू करने के लिए कृपया *Start* लिखें।")
+    # 5. Default fallback
+    send_whatsapp_text(sender, "नमस्ते सर! नया केस शुरू करने के लिए कृपया *Start* लिखें या अपनी NCRP शिकायत की PDF फ़ाइल यहाँ भेजें।")
     return {"status": "help_sent"}
 
 

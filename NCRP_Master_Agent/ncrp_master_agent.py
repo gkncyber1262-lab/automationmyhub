@@ -6107,7 +6107,11 @@ class NCRPUnifiedAgent:
 
         # Extract ack no from filename or target
 
-        m_ack = re.search(r'(\d{10,20})', os.path.basename(resolved_file))
+        m_ack14 = re.search(r'(\d{14})', os.path.basename(resolved_file))
+        if m_ack14:
+            m_ack = m_ack14
+        else:
+            m_ack = re.search(r'(\d{10,20})', os.path.basename(resolved_file))
 
         ack_no = m_ack.group(1) if m_ack else "30810260096576"
 
@@ -6460,7 +6464,7 @@ class NCRPUnifiedAgent:
         print("=" * 90 + "\n")
 
         ctx["case_dir"] = case_dir
-
+        ctx["acknowledgement_no"] = ack_no
         return ctx
 
 
