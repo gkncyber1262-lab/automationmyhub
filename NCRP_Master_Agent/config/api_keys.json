@@ -1,0 +1,78 @@
+{
+  "api_authentication_keys": {
+    "master_api_key": "CYBER-INTEL-MASTER-2026-X9K4R2",
+    "officer_investigation_key": "CYBER-OFFICER-INVESTIGATION-KEY-8821",
+    "spacebyte_internal_key": "n7Vq2Kx9Lm4Rz8Tp6Yw3Nc1Hs5Df0Gj8Ua2Pe9Xr7Bt4Mv6Qk",
+    "aadhaar_to_pan_api_key": "11e2ae52cb2ec8bbdfce6de6fd89a692e7d9e95c428649c423c762f24b39",
+    "email_breach_rapidapi_key": "6fbfc8ea71msha7d23ac11059465p1808f6jsn2aa7a442043f"
+  },
+  "master_databases": {
+    "external_master_db_path": "E:/Database",
+    "total_master_size": "560 GB (WiredTiger MongoDB format)",
+    "mongodb_instances": {
+      "port_27019_master_e_drive": {
+        "uri": "mongodb://localhost:27019/",
+        "db_path": "E:/Database",
+        "databases": [
+          "num_data_new",
+          "Truecaller273_million_db",
+          "bank_data",
+          "lendenclub_db",
+          "Truecaller273_million_dbruecaller273_million_db",
+          "JJobseeker_db",
+          "Gujarat_db",
+          "Maharasta_db",
+          "ndraPradesh_Telangana_db",
+          "cyberinfo"
+        ]
+      },
+      "port_27018_cellid_master": {
+        "uri": "mongodb://localhost:27018/",
+        "db_path": "D:/CELL ID 22-10-2026/MONGODB_DATA/db",
+        "database": "cellid_cdr",
+        "collection": "cells",
+        "total_towers": "15,664,097 towers"
+      },
+      "port_27017_case_investigation": {
+        "uri": "mongodb://localhost:27017/",
+        "database": "cyber_crime_investigation_db",
+        "collections": [
+          "kyc_osint_cache",
+          "cell_tower_queries",
+          "suspect_profiles"
+        ]
+      }
+    }
+  },
+  "services_and_endpoints": {
+    "mobile_lookup": {
+      "endpoint": "/api/v1/mobile/{mobile_number}",
+      "primary_db": "num_data_new (users_data_collection - 1.78B records)",
+      "secondary_dbs": [
+        "Truecaller273_million_db.data_100million",
+        "Truecaller273_million_db.OAP_USER_MASTER_T",
+        "bank_data.customer_data",
+        "lendenclub_db"
+      ]
+    },
+    "pan_lookup": {
+      "endpoint": "/api/v1/pan/{pan_number}",
+      "primary_db": "lendenclub_db (11M customer KYC records)",
+      "external_provider": "https://www.apizone.info/api/find_pan/aadhaar_to_pan.php"
+    },
+    "aadhaar_lookup": {
+      "endpoint": "/api/v1/aadhaar/{aadhaar_number}",
+      "primary_db": "lendenclub_db + E:/API/aadhaar_to_pan_api.py",
+      "action": "Aadhaar to PAN & linked KYC conversion"
+    },
+    "email_lookup": {
+      "endpoint": "/api/v1/email/{email_address}",
+      "primary_db": "Truecaller273_million_db.OAP_USER_MASTER_T + lendenclub_db",
+      "breach_provider": "https://email-breach-search.p.rapidapi.com/"
+    },
+    "cell_id_lookup": {
+      "endpoint": "/api/v1/cellid/{cell_id}",
+      "primary_db": "cellid_cdr.cells (15.66M towers on port 27018) + cellid_master.sqlite"
+    }
+  }
+}

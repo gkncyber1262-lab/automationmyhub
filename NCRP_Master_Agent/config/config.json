@@ -1,0 +1,40 @@
+{
+  "station_details": {
+    "police_station": "CYBER POLICE STATION, NORTH DISTRICT",
+    "district": "NORTH DISTRICT, DELHI POLICE",
+    "office_address": "Assistant Commissioner of Police Operations Office Complex, Behind Daulat Ram College, Maurice Nagar, Delhi-110007",
+    "station_email": "shocyber.north@delhipolice.gov.in",
+    "station_phone": "+918750870188"
+  },
+  "default_investigating_officer": {
+    "name": "SI ARVIND KUMAR",
+    "rank": "SUB INSPECTOR",
+    "belt_no": "8750871987",
+    "mobile": "+918750871987",
+    "email": "shocyber.north@delhipolice.gov.in"
+  },
+  "legal_framework": {
+    "notice_section": "Section 94 BNSS, 2023",
+    "freezing_section": "Section 106 BNSS, 2023",
+    "case_diary_section": "Section 192 BNSS, 2023 (formerly Section 172 CrPC)",
+    "substantive_offences": "Sections 318(4) / 319(2) Bharatiya Nyaya Sanhita (BNS), 2023 & Section 66D Information Technology Act, 2000",
+    "electronic_evidence_cert": "Section 63 Bharatiya Sakshya Adhiniyam (BSA), 2023"
+  },
+  "email_settings": {
+    "enabled": false,
+    "smtp_server": "smtp.delhipolice.gov.in",
+    "smtp_port": 587,
+    "use_tls": true,
+    "sender_email": "shocyber.north@delhipolice.gov.in",
+    "sender_name": "Cyber Police Station North District, Delhi",
+    "dry_run": true,
+    "require_io_confirmation": true
+  },
+  "assets": {
+    "crest_logo": "assets/delhi_police_crest_hd.png",
+    "stamp_seal": "assets/stamp_clean.png",
+    "io_signature": "assets/signatures/arvind.png",
+    "logos_dir": "assets/logos",
+    "templates_dir": "templates"
+  }
+}

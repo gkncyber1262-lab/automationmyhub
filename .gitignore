@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.bak_*
+
+# Virtual environments
+venv/
+.env
+env/
+
+# Temporary run outputs (keep structure clean)
+NCRP_Master_Agent/output/_temp_exam/
+archive/
+
+# Sensitive database files (if large local dumps)
+*.db-journal
+*.log
+
+# OS generated
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D FORENSIC MONEY TRAIL | NCRP ACK No. 30810260096039 | U/S 318(4) BNS</title>
+    <style>
+        :root {
+            --bg-base: #060b19;
+            --bg-card: #0d162d;
+            --cyan-glow: #00f0ff;
+            --red-glow: #ef4444;
+            --green-glow: #10b981;
+            --amber-glow: #f59e0b;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
+        body { background: var(--bg-base); color: #e2e8f0; overflow-x: hidden; }
+        header { text-align: center; padding: 25px 20px; border-bottom: 2px solid #1e293b; background: rgba(13,22,45,0.7); backdrop-filter: blur(8px); }
+        h1 { color: #ffd700; font-size: 24px; letter-spacing: 1px; }
+        h2 { color: var(--cyan-glow); font-size: 18px; margin-top: 6px; font-weight: 600; }
+        .meta-bar { margin-top: 8px; color: #94a3b8; font-size: 14px; }
+        .badge-sec { background: #dc2626; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; margin-left: 8px; }
+        
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; max-width: 1300px; margin: 20px auto; padding: 0 15px; }
+        .m-card { background: var(--bg-card); border-radius: 10px; padding: 15px 20px; border: 1px solid #1e293b; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .m-card h4 { font-size: 12px; color: #94a3b8; text-transform: uppercase; margin-bottom: 6px; }
+        .m-card .val { font-size: 22px; font-weight: bold; }
+        
+        .trail-container { max-width: 1300px; margin: 20px auto; padding: 20px 15px; display: flex; flex-direction: column; gap: 30px; }
+        .layer-row { background: rgba(13,22,45,0.5); border: 1px solid #1e293b; border-radius: 12px; padding: 20px; }
+        .layer-title { font-size: 15px; font-weight: bold; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
+        .node-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; }
+        .node-card { background: #0b1329; border: 2px solid; border-radius: 10px; padding: 15px; position: relative; transition: all 0.3s; }
+        .node-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,240,255,0.25); }
+        .node-badge { display: inline-block; padding: 3px 8px; font-size: 11px; font-weight: bold; border-radius: 4px; margin-bottom: 8px; color: #fff; }
+        .node-name { font-size: 16px; font-weight: bold; color: #fff; margin-bottom: 6px; }
+        .node-row { font-size: 13px; color: #cbd5e1; margin-bottom: 4px; display: flex; justify-content: space-between; }
+        .node-amt { font-size: 18px; font-weight: bold; margin-top: 8px; }
+        
+        .flow-arrow { text-align: center; color: var(--cyan-glow); font-size: 24px; margin: -10px 0; }
+        footer { text-align: center; padding: 25px; color: #64748b; font-size: 13px; border-top: 1px solid #1e293b; margin-top: 40px; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>OFFICE OF THE STATION HOUSE OFFICER, CYBER POLICE STATION</h1>
+        <h2>3D FORENSIC MONEY TRAIL & ASSET RECOVERY MATRIX | NCRP ACK No. 30810260096039</h2>
+        <div class="meta-bar">
+            NCRP ACK: <strong>30810260096039</strong> | COMPLAINANT: <strong>JASBIR KAUR</strong>
+            <span class="badge-sec">PENAL SECTION: 318(4) BNS ONLY</span>
+        </div>
+    </header>
+
+    <div class="metrics-grid">
+        <div class="m-card" style="border-left: 4px solid var(--red-glow);">
+            <h4>TOTAL REPORTED LOSS</h4>
+            <div class="val" style="color: var(--red-glow);">Rs. 850,000.00</div>
+        </div>
+        <div class="m-card" style="border-left: 4px solid var(--green-glow);">
+            <h4>TOTAL LIEN SECURED</h4>
+            <div class="val" style="color: var(--green-glow);">Rs. 263,937.12</div>
+        </div>
+        <div class="m-card" style="border-left: 4px solid #ef4444;">
+            <h4>ATM CASH DISPERSED</h4>
+            <div class="val" style="color: #f87171;">Rs. 0.00</div>
+        </div>
+        <div class="m-card" style="border-left: 4px solid var(--cyan-glow);">
+            <h4>ASSET RECOVERY RATIO</h4>
+            <div class="val" style="color: var(--cyan-glow);">31.1%</div>
+        </div>
+    </div>
+
+    <div class="trail-container">
+        <!-- Layer 0 -->
+        <div class="layer-row" style="border-color: var(--red-glow);">
+            <div class="layer-title" style="color: var(--red-glow);">
+                <span>🚨 LAYER 0: VICTIM DEBIT DISBURSAL</span>
+            </div>
+            <div class="node-grid">
+                <div class="node-card" style="border-color: var(--red-glow);">
+                    <span class="node-badge" style="background: #dc2626;">COMPLAINANT / VICTIM</span>
+                    <div class="node-name">JASBIR KAUR</div>
+                    <div class="node-row"><span>Victim Bank:</span><span>Canara Bank</span></div>
+                    <div class="node-row"><span>Victim A/c:</span><span>2419101019765</span></div>
+                    <div class="node-amt" style="color: var(--red-glow);">Rs. 850,000.00</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flow-arrow">▼ Funds Disbursed to Entry Mules (Layer 1) ▼</div>
+
+        <!-- Layer 1 -->
+        <div class="layer-row" style="border-color: var(--amber-glow);" id="layer1_container">
+            <div class="layer-title" style="color: var(--amber-glow);">
+                <span>⚠️ LAYER 1: DIRECT ENTRY MULE ACCOUNTS (NOTICE U/S 94 BNSS)</span>
+            </div>
+            <div class="node-grid" id="l1_grid"></div>
+        </div>
+
+        <div class="flow-arrow">▼ Funds Layered across Banking Channels (Layer 2) ▼</div>
+
+        <!-- Layer 2 -->
+        <div class="layer-row" style="border-color: var(--cyan-glow);" id="layer2_container">
+            <div class="layer-title" style="color: var(--cyan-glow);">
+                <span>⚡ LAYER 2: INTERMEDIARY MULES & AGGREGATOR WALLETS</span>
+            </div>
+            <div class="node-grid" id="l2_grid"></div>
+        </div>
+
+        <div class="flow-arrow">▼ Terminal Lien Freezes & ATM Siphoning ▼</div>
+
+        <!-- Terminal Endpoints -->
+        <div class="layer-row" style="border-color: #a855f7;" id="term_container">
+            <div class="layer-title" style="color: #a855f7;">
+                <span>🎯 TERMINAL ENDPOINTS: LIENS & CASH-OUTS</span>
+            </div>
+            <div class="node-grid" id="term_grid"></div>
+        </div>
+    </div>
+
+    <footer>
+        DELHI POLICE CYBER CRIME INVESTIGATION SUITE • STATUTORY COMPLIANCE: SECTION 94 BNSS & SECTION 318(4) BNS<br>
+        PS Cyber, North District, Maurice Nagar, Delhi-110007 • Email: shocyber.north@delhipolice.gov.in
+    </footer>
+
+    <script>
+        const NODES = [{"id": "node_victim", "name": "Victim: JASBIR KAUR", "type": "victim", "layer": 0, "bank": "Canara Bank", "account": "2419101019765", "amount": "Rs. 850,000.00", "details": "Complainant Bank: Canara Bank | A/c: 2419101019765 | Mob: 8368226340"}, {"id": "node_L1_110017300653", "name": "Canara Bank", "type": "layer_1", "layer": 1, "bank": "Canara Bank", "account": "110017300653", "ifsc": "CNRB0018833", "amount": "Rs. 200,000.00", "utr": "FUNDTRANSFERBYCHEQUE", "details": "Layer 1 Mule | Bank: Canara Bank | A/c: 110017300653 | IFSC: CNRB0018833"}, {"id": "node_L1_110334693254", "name": "Canara Bank", "type": "layer_1", "layer": 1, "bank": "Canara Bank", "account": "110334693254", "ifsc": "CNRB0018849", "amount": "Rs. 200,000.00", "utr": "FUNDTRANSFERBYCHEQUE", "details": "Layer 1 Mule | Bank: Canara Bank | A/c: 110334693254 | IFSC: CNRB0018849"}, {"id": "node_L1_110194059310", "name": "Canara Bank", "type": "layer_1", "layer": 1, "bank": "Canara Bank", "account": "110194059310", "ifsc": "CNRB0001627", "amount": "Rs. 200,000.00", "utr": "FUNDTRANSFERBYCHEQUE", "details": "Layer 1 Mule | Bank: Canara Bank | A/c: 110194059310 | IFSC: CNRB0001627"}, {"id": "node_L1_110274302078", "name": "Canara Bank", "type": "layer_1", "layer": 1, "bank": "Canara Bank", "account": "110274302078", "ifsc": "CNRB0001627", "amount": "Rs. 250,000.00", "utr": "FUNDTRANSFERBYCHEQUE", "details": "Layer 1 Mule | Bank: Canara Bank | A/c: 110274302078 | IFSC: CNRB0001627"}, {"id": "node_L2_746501500320", "name": "ICICI Bank", "type": "layer_2", "layer": 2, "bank": "ICICI Bank", "account": "746501500320", "ifsc": "ICIC0007465", "amount": "Rs. 99,995.00", "utr": "615677285056", "details": "Layer 2 Mule | Bank: ICICI Bank | A/c: 746501500320 | IFSC: ICIC0007465"}, {"id": "node_L2_58228100032604", "name": "Bank of Baroda", "type": "layer_2", "layer": 2, "bank": "Bank of Baroda", "account": "58228100032604", "ifsc": "BARB0MOREGA", "amount": "Rs. 100,000.00", "utr": "628216340147", "details": "Layer 2 Mule | Bank: Bank of Baroda | A/c: 58228100032604 | IFSC: BARB0MOREGA"}, {"id": "node_L2_44600125806", "name": "State Bank of India", "type": "layer_2", "layer": 2, "bank": "State Bank of India", "account": "44600125806", "ifsc": "SBIN0050217", "amount": "Rs. 10,000.00", "utr": "628215330096", "details": "Layer 2 Mule | Bank: State Bank of India | A/c: 44600125806 | IFSC: SBIN0050217"}, {"id": "node_L2_20182033865", "name": "Fino Payments Bank", "type": "layer_2", "layer": 2, "bank": "Fino Payments Bank", "account": "20182033865", "ifsc": "FINO0000001", "amount": "Rs. 51,000.00", "utr": "818752479292", "details": "Layer 2 Mule | Bank: Fino Payments Bank | A/c: 20182033865 | IFSC: FINO0000001"}, {"id": "node_L3_44600125806", "name": "State Bank of India", "type": "layer_3", "layer": 3, "bank": "State Bank of India", "account": "44600125806", "ifsc": "SBIN0000001", "amount": "Rs. 10,000.00", "utr": "550943994211", "details": "Layer 3 Mule | Bank: State Bank of India | A/c: 44600125806 | IFSC: SBIN0000001"}, {"id": "node_L3_110194059310", "name": "Canara Bank", "type": "layer_3", "layer": 3, "bank": "Canara Bank", "account": "110194059310", "ifsc": "CNRB0000033", "amount": "Rs. 9,970.90", "utr": "234523483202", "details": "Layer 3 Mule | Bank: Canara Bank | A/c: 110194059310 | IFSC: CNRB0000033"}, {"id": "node_L3_781018210004038", "name": "Bank of India", "type": "layer_3", "layer": 3, "bank": "Bank of India", "account": "781018210004038", "ifsc": "BKID0007810", "amount": "Rs. 9,798.00", "utr": "316503231695", "details": "Layer 3 Mule | Bank: Bank of India | A/c: 781018210004038 | IFSC: BKID0007810"}, {"id": "node_L3_50200027864076", "name": "HDFC Bank", "type": "layer_3", "layer": 3, "bank": "HDFC Bank", "account": "50200027864076", "ifsc": "HDFC0MERUPI", "amount": "Rs. 606.82", "utr": "316549263831", "details": "Layer 3 Mule | Bank: HDFC Bank | A/c: 50200027864076 | IFSC: HDFC0MERUPI"}, {"id": "node_L4_50200027864076", "name": "Paytm", "type": "layer_4", "layer": 4, "bank": "Paytm", "account": "50200027864076", "ifsc": "", "amount": "Rs. 606.82", "utr": "316549263831", "details": "Layer 4 Mule | Bank: Paytm | A/c: 50200027864076 | IFSC: "}, {"id": "node_L2_50100538614072", "name": "HDFC Bank", "type": "layer_2", "layer": 2, "bank": "HDFC Bank", "account": "50100538614072", "ifsc": "HDFC0001334", "amount": "Rs. 25,000.00", "utr": "628119132813", "details": "Layer 2 Mule | Bank: HDFC Bank | A/c: 50100538614072 | IFSC: HDFC0001334"}, {"id": "node_L2_3615703313", "name": "Central Bank of India", "type": "layer_2", "layer": 2, "bank": "Central Bank of India", "account": "3615703313", "ifsc": "CBIN0012111", "amount": "Rs. 25,000.00", "utr": "628118120767", "details": "Layer 2 Mule | Bank: Central Bank of India | A/c: 3615703313 | IFSC: CBIN0012111"}, {"id": "node_L2_44310100000200", "name": "Uttar Pradesh Gramin Ban", "type": "layer_2", "layer": 2, "bank": "Uttar Pradesh Gramin Bank", "account": "44310100000200", "ifsc": "BARB0BUPGBX", "amount": "Rs. 35,000.00", "utr": "628118121186", "details": "Layer 2 Mule | Bank: Uttar Pradesh Gramin Bank | A/c: 44310100000200 | IFSC: BARB0BUPGBX"}, {"id": "node_L2_258077866615", "name": "IndusInd Bank", "type": "layer_2", "layer": 2, "bank": "IndusInd Bank", "account": "258077866615", "ifsc": "INDB0000012", "amount": "Rs. 50,000.00", "utr": "628117093574", "details": "Layer 2 Mule | Bank: IndusInd Bank | A/c: 258077866615 | IFSC: INDB0000012"}, {"id": "node_L2_153202000001235", "name": "Indian Overseas Bank", "type": "layer_2", "layer": 2, "bank": "Indian Overseas Bank", "account": "153202000001235", "ifsc": "IOBA0001532", "amount": "Rs. 15,000.00", "utr": "316437820295", "details": "Layer 2 Mule | Bank: Indian Overseas Bank | A/c: 153202000001235 | IFSC: IOBA0001532"}, {"id": "node_L3_00000003066081529", "name": "Central Bank of India", "type": "layer_3", "layer": 3, "bank": "Central Bank of India", "account": "00000003066081529", "ifsc": "CBIN0283748", "amount": "Rs. 24,663.10", "utr": "217584989030", "details": "Layer 3 Mule | Bank: Central Bank of India | A/c: 00000003066081529 | IFSC: CBIN0283748"}, {"id": "node_L2_0147668583", "name": "Kotak Mahindra Bank", "type": "layer_2", "layer": 2, "bank": "Kotak Mahindra Bank", "account": "0147668583", "ifsc": "KKBK0811000", "amount": "Rs. 10,000.00", "utr": "217580124402", "details": "Layer 2 Mule | Bank: Kotak Mahindra Bank | A/c: 0147668583 | IFSC: KKBK0811000"}, {"id": "node_L2_211071614", "name": "Yes Bank", "type": "layer_2", "layer": 2, "bank": "Yes Bank", "account": "211071614", "ifsc": "YESB0PTMUPI", "amount": "Rs. 1,640.00", "utr": "217599245831", "details": "Layer 2 Mule | Bank: Yes Bank | A/c: 211071614 | IFSC: YESB0PTMUPI"}, {"id": "node_L3_211071614", "name": "Paytm", "type": "layer_3", "layer": 3, "bank": "Paytm", "account": "211071614", "ifsc": "YESB0PTMUPI", "amount": "Rs. 1,640.00", "utr": "217599245831", "details": "Layer 3 Mule | Bank: Paytm | A/c: 211071614 | IFSC: YESB0PTMUPI"}, {"id": "node_L3_009685700000086", "name": "Yes Bank", "type": "layer_3", "layer": 3, "bank": "Yes Bank", "account": "009685700000086", "ifsc": "YESB0000096", "amount": "Rs. 6,367.00", "utr": "615640630718", "details": "Layer 3 Mule | Bank: Yes Bank | A/c: 009685700000086 | IFSC: YESB0000096"}, {"id": "node_L4_211071614", "name": "Paytm", "type": "layer_4", "layer": 4, "bank": "Paytm", "account": "211071614", "ifsc": "YESB0PTMUPI", "amount": "Rs. 12,283.00", "utr": "217598354247", "details": "Layer 4 Mule | Bank: Paytm | A/c: 211071614 | IFSC: YESB0PTMUPI"}, {"id": "node_L3_00000044160631117", "name": "State Bank of India", "type": "layer_3", "layer": 3, "bank": "State Bank of India", "account": "00000044160631117", "ifsc": "SBIN0002488", "amount": "Rs. 9,000.00", "utr": "664806818806", "details": "Layer 3 Mule | Bank: State Bank of India | A/c: 00000044160631117 | IFSC: SBIN0002488"}, {"id": "node_L3_88492210038925", "name": "Canara Bank", "type": "layer_3", "layer": 3, "bank": "Canara Bank", "account": "88492210038925", "ifsc": "CNRB0000033", "amount": "Rs. 1,000.00", "utr": "664719681177", "details": "Layer 3 Mule | Bank: Canara Bank | A/c: 88492210038925 | IFSC: CNRB0000033"}, {"id": "node_L4_002261100000025", "name": "Axis Bank", "type": "layer_4", "layer": 4, "bank": "Axis Bank", "account": "002261100000025", "ifsc": "UTIB0AXLUPI", "amount": "Rs. 848.00", "utr": "727804957860", "details": "Layer 4 Mule | Bank: Axis Bank | A/c: 002261100000025 | IFSC: UTIB0AXLUPI"}, {"id": "node_L4_00000033637327543", "name": "State Bank of India", "type": "layer_4", "layer": 4, "bank": "State Bank of India", "account": "00000033637327543", "ifsc": "SBIN0004441", "amount": "Rs. 2,000.00", "utr": "539178682267", "details": "Layer 4 Mule | Bank: State Bank of India | A/c: 00000033637327543 | IFSC: SBIN0004441"}, {"id": "node_L5_002261100000025", "name": "Yes Bank", "type": "layer_5", "layer": 5, "bank": "Yes Bank", "account": "002261100000025", "ifsc": "YESB0YBLUPI", "amount": "Rs. 848.00", "utr": "727804957860", "details": "Layer 5 Mule | Bank: Yes Bank | A/c: 002261100000025 | IFSC: YESB0YBLUPI"}, {"id": "node_L6_002261100000025", "name": "PhonePe", "type": "layer_6", "layer": 6, "bank": "PhonePe", "account": "002261100000025", "ifsc": "", "amount": "Rs. 848.00", "utr": "727804957860", "details": "Layer 6 Mule | Bank: PhonePe | A/c: 002261100000025 | IFSC: "}, {"id": "node_L7_LoanNumberPAC1PDD106122384NA", "name": "Others (For T26100922144", "type": "layer_7", "layer": 7, "bank": "Others (For T26100922144812 12175023, this payment is done towards loan payment for loan Number: PAC1PDD1061223 84 and loan provider: Bajaj Finance LTD.)", "account": "LoanNumberPAC1PDD106122384NA", "ifsc": "", "amount": "Rs. 848.00", "utr": "727804957860", "details": "Layer 7 Mule | Bank: Others (For T26100922144812 12175023, this payment is done towards loan payment for loan Number: PAC1PDD1061223 84 and loan provider: Bajaj Finance LTD.) | A/c: LoanNumberPAC1PDD106122384NA | IFSC: "}, {"id": "node_L4_009685700000086", "name": "Muthoot Finance Ltd", "type": "layer_4", "layer": 4, "bank": "Muthoot Finance Ltd", "account": "009685700000086", "ifsc": "", "amount": "Rs. 2,413.00", "utr": "316462389165", "details": "Layer 4 Mule | Bank: Muthoot Finance Ltd | A/c: 009685700000086 | IFSC: "}, {"id": "node_L5_shahrukh39@ptyes", "name": "Others (Airtel)", "type": "layer_5", "layer": 5, "bank": "Others (Airtel)", "account": "shahrukh39@ptyes", "ifsc": "", "amount": "Rs. 606.82", "utr": "NA", "details": "Layer 5 Mule | Bank: Others (Airtel) | A/c: shahrukh39@ptyes | IFSC: "}, {"id": "node_hold_1", "name": "🛡️ LIEN: Rs. 99,995.00", "type": "lien", "layer": 3, "bank": "Bank Lien", "account": "746501500320", "amount": "Rs. 99,995.00", "details": "100% Debit Freeze | Date: 12/10/2026 | A/c: 746501500320"}, {"id": "node_hold_2", "name": "🛡️ LIEN: Rs. 40,025.10", "type": "lien", "layer": 3, "bank": "Bank Lien", "account": "58228100032604", "amount": "Rs. 40,025.10", "details": "100% Debit Freeze | Date: 12/10/2026 | A/c: 58228100032604"}, {"id": "node_hold_3", "name": "🛡️ LIEN: Rs. 51,000.00", "type": "lien", "layer": 3, "bank": "Bank Lien", "account": "20182033865", "amount": "Rs. 51,000.00", "details": "100% Debit Freeze | Date: 12/10/2026 | A/c: 20182033865"}, {"id": "node_hold_4", "name": "🛡️ LIEN: Rs. 48,000.00", "type": "lien", "layer": 3, "bank": "Bank Lien", "account": "746501500320", "amount": "Rs. 48,000.00", "details": "100% Debit Freeze | Date: 12/10/2026 | A/c: 746501500320"}, {"id": "node_hold_5", "name": "🛡️ LIEN: Rs. 10,000.00", "type": "lien", "layer": 3, "bank": "Bank Lien", "account": "746501500320", "amount": "Rs. 10,000.00", "details": "100% Debit Freeze | Date: 12/10/2026 | A/c: 746501500320"}, {"id": "node_hold_6", "name": "🛡️ LIEN: Rs. 488.28", "type": "lien", "layer": 3, "bank": "Bank Lien", "account": "110194059310", "amount": "Rs. 488.28", "details": "100% Debit Freeze | Date: 12/10/2026 | A/c: 110194059310"}, {"id": "node_hold_7", "name": "🛡️ LIEN: Rs. 488.28", "type": "lien", "layer": 3, "bank": "Bank Lien", "account": "110194059310", "amount": "Rs. 488.28", "details": "100% Debit Freeze | Date: 12/10/2026 | A/c: 110194059310"}, {"id": "node_hold_8", "name": "🛡️ LIEN: Rs. 17.46", "type": "lien", "layer": 3, "bank": "Bank Lien", "account": "44600125806", "amount": "Rs. 17.46", "details": "100% Debit Freeze | Date: 10/10/2026 | A/c: 44600125806"}, {"id": "node_hold_9", "name": "🛡️ LIEN: Rs. 12,283.00", "type": "lien", "layer": 3, "bank": "Bank Lien", "account": "211071614", "amount": "Rs. 12,283.00", "details": "100% Debit Freeze | Date: 12/10/2026 | A/c: 211071614"}, {"id": "node_hold_10", "name": "🛡️ LIEN: Rs. 1,640.00", "type": "lien", "layer": 3, "bank": "Bank Lien", "account": "211071614", "amount": "Rs. 1,640.00", "details": "100% Debit Freeze | Date: 12/10/2026 | A/c: 211071614"}, {"id": "node_atm_terminal", "name": "🏧 ATM CASH: Rs. 288,500.00", "type": "atm", "layer": 3, "bank": "ATM Cash-Out", "amount": "Rs. 288,500.00", "details": "16 ATM Withdrawals | Location: Indusin d Bank Ltd.,Gro und Floor “Tyagi Market”, # 22,Tej Garhi, Garh Road,M eerut- 250 004, Uttar Pradesh"}];
+        const LINKS = [{"source": "node_victim", "target": "node_L1_110017300653", "amount": "Rs. 200,000.00", "utr": "FUNDTRANSFERBYCHEQUE"}, {"source": "node_victim", "target": "node_L1_110334693254", "amount": "Rs. 200,000.00", "utr": "FUNDTRANSFERBYCHEQUE"}, {"source": "node_victim", "target": "node_L1_110194059310", "amount": "Rs. 200,000.00", "utr": "FUNDTRANSFERBYCHEQUE"}, {"source": "node_victim", "target": "node_L1_110274302078", "amount": "Rs. 250,000.00", "utr": "FUNDTRANSFERBYCHEQUE"}, {"source": "node_L1_110017300653", "target": "node_L2_746501500320", "amount": "Rs. 99,995.00", "utr": "615677285056"}, {"source": "node_L1_110017300653", "target": "node_L2_58228100032604", "amount": "Rs. 100,000.00", "utr": "628216340147"}, {"source": "node_L1_110017300653", "target": "node_L2_44600125806", "amount": "Rs. 10,000.00", "utr": "628215330096"}, {"source": "node_L1_110017300653", "target": "node_L2_20182033865", "amount": "Rs. 51,000.00", "utr": "818752479292"}, {"source": "node_L1_110017300653", "target": "node_L2_50100538614072", "amount": "Rs. 25,000.00", "utr": "628119132813"}, {"source": "node_L1_110017300653", "target": "node_L2_3615703313", "amount": "Rs. 25,000.00", "utr": "628118120767"}, {"source": "node_L1_110017300653", "target": "node_L2_44310100000200", "amount": "Rs. 35,000.00", "utr": "628118121186"}, {"source": "node_L1_110017300653", "target": "node_L2_258077866615", "amount": "Rs. 50,000.00", "utr": "628117093574"}, {"source": "node_L1_110017300653", "target": "node_L2_153202000001235", "amount": "Rs. 15,000.00", "utr": "316437820295"}, {"source": "node_L1_110017300653", "target": "node_L2_0147668583", "amount": "Rs. 10,000.00", "utr": "217580124402"}, {"source": "node_L1_110017300653", "target": "node_L2_211071614", "amount": "Rs. 1,640.00", "utr": "217599245831"}, {"source": "node_L1_110017300653", "target": "node_hold_1", "amount": "Rs. 99,995.00", "utr": "LIEN HOLD"}, {"source": "node_L1_110017300653", "target": "node_hold_2", "amount": "Rs. 40,025.10", "utr": "LIEN HOLD"}, {"source": "node_L1_110017300653", "target": "node_hold_3", "amount": "Rs. 51,000.00", "utr": "LIEN HOLD"}, {"source": "node_L1_110017300653", "target": "node_hold_4", "amount": "Rs. 48,000.00", "utr": "LIEN HOLD"}, {"source": "node_L1_110017300653", "target": "node_hold_5", "amount": "Rs. 10,000.00", "utr": "LIEN HOLD"}, {"source": "node_L1_110017300653", "target": "node_hold_6", "amount": "Rs. 488.28", "utr": "LIEN HOLD"}, {"source": "node_L1_110017300653", "target": "node_hold_7", "amount": "Rs. 488.28", "utr": "LIEN HOLD"}, {"source": "node_L1_110017300653", "target": "node_hold_8", "amount": "Rs. 17.46", "utr": "LIEN HOLD"}, {"source": "node_L1_110017300653", "target": "node_hold_9", "amount": "Rs. 12,283.00", "utr": "LIEN HOLD"}, {"source": "node_L1_110017300653", "target": "node_hold_10", "amount": "Rs. 1,640.00", "utr": "LIEN HOLD"}, {"source": "node_L1_110274302078", "target": "node_atm_terminal", "amount": "Rs. 288,500.00", "utr": "CASH WITHDRAWAL"}];
+
+        const l1Grid = document.getElementById('l1_grid');
+        const l2Grid = document.getElementById('l2_grid');
+        const termGrid = document.getElementById('term_grid');
+
+        let hasL1 = false, hasL2 = false, hasTerm = false;
+
+        NODES.forEach(n => {
+            if (n.type === 'layer_1') {
+                hasL1 = true;
+                l1Grid.innerHTML += `
+                    <div class="node-card" style="border-color: var(--amber-glow);">
+                        <span class="node-badge" style="background: #d97706;">ENTRY MULE</span>
+                        <div class="node-name">${n.name}</div>
+                        <div class="node-row"><span>Account No:</span><span>${n.account}</span></div>
+                        <div class="node-row"><span>IFSC Code:</span><span>${n.ifsc || 'N/A'}</span></div>
+                        <div class="node-amt" style="color: var(--amber-glow);">${n.amount}</div>
+                    </div>`;
+            } else if (n.type === 'layer_2') {
+                hasL2 = true;
+                l2Grid.innerHTML += `
+                    <div class="node-card" style="border-color: var(--cyan-glow);">
+                        <span class="node-badge" style="background: #0284c7;">INTERMEDIARY MULE</span>
+                        <div class="node-name">${n.name}</div>
+                        <div class="node-row"><span>Account No:</span><span>${n.account}</span></div>
+                        <div class="node-row"><span>IFSC Code:</span><span>${n.ifsc || 'N/A'}</span></div>
+                        <div class="node-amt" style="color: var(--cyan-glow);">${n.amount}</div>
+                    </div>`;
+            } else if (n.type === 'lien') {
+                hasTerm = true;
+                termGrid.innerHTML += `
+                    <div class="node-card" style="border-color: var(--green-glow);">
+                        <span class="node-badge" style="background: #059669;">🛡️ LIEN SECURED</span>
+                        <div class="node-name">${n.name}</div>
+                        <div class="node-row"><span>Frozen Account:</span><span>${n.account}</span></div>
+                        <div class="node-amt" style="color: var(--green-glow);">${n.amount}</div>
+                    </div>`;
+            } else if (n.type === 'atm') {
+                hasTerm = true;
+                termGrid.innerHTML += `
+                    <div class="node-card" style="border-color: #ef4444;">
+                        <span class="node-badge" style="background: #dc2626;">🏧 ATM CASH-OUT</span>
+                        <div class="node-name">${n.name}</div>
+                        <div class="node-row"><span>Details:</span><span>${n.details}</span></div>
+                        <div class="node-amt" style="color: #f87171;">${n.amount}</div>
+                    </div>`;
+            }
+        });
+
+        if (!hasL1) document.getElementById('layer1_container').style.display = 'none';
+        if (!hasL2) document.getElementById('layer2_container').style.display = 'none';
+        if (!hasTerm) document.getElementById('term_container').style.display = 'none';
+    </script>
+</body>
+</html>

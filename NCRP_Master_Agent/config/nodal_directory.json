@@ -1,0 +1,184 @@
+{
+  "banks": {
+    "State Bank of India": {
+      "entity_name": "State Bank of India",
+      "nodal_email": "nodal.cyber@sbi.co.in",
+      "secondary_email": "customercare@sbi.co.in",
+      "escalation_email": "agmcyber.fraud@sbi.co.in"
+    },
+    "Punjab National Bank": {
+      "entity_name": "Punjab National Bank",
+      "nodal_email": "nodalofficer@pnb.co.in",
+      "secondary_email": "cybercell@pnb.co.in",
+      "escalation_email": "fprd@pnb.co.in"
+    },
+    "HDFC Bank": {
+      "entity_name": "HDFC Bank Limited",
+      "nodal_email": "lawenforcement@hdfcbank.com",
+      "secondary_email": "cybercell.support@hdfcbank.com",
+      "escalation_email": "grievance.redressal@hdfcbank.com"
+    },
+    "ICICI Bank": {
+      "entity_name": "ICICI Bank Limited",
+      "nodal_email": "cybercell@icicibank.com",
+      "secondary_email": "headservicequality@icicibank.com",
+      "escalation_email": "lea.response@icicibank.com"
+    },
+    "Axis Bank": {
+      "entity_name": "Axis Bank Limited",
+      "nodal_email": "cybercell@axisbank.com",
+      "secondary_email": "nodal.officer@axisbank.com",
+      "escalation_email": "fraudcontrol@axisbank.com"
+    },
+    "IDFC First Bank": {
+      "entity_name": "IDFC First Bank Limited",
+      "nodal_email": "cybercell@idfcfirstbank.com",
+      "secondary_email": "nodal.officer@idfcfirstbank.com",
+      "escalation_email": "frauddesk@idfcfirstbank.com"
+    },
+    "Canara Bank": {
+      "entity_name": "Canara Bank",
+      "nodal_email": "cybercell@canarabank.com",
+      "secondary_email": "fprd@canarabank.com",
+      "escalation_email": "nodalofficer@canarabank.com"
+    },
+    "Utkarsh Small Finance Bank Limited": {
+      "entity_name": "Utkarsh Small Finance Bank Limited",
+      "nodal_email": "cybercell@utkarsh.bank",
+      "secondary_email": "communications@utkarsh.bank",
+      "escalation_email": "fraud.monitoring@utkarsh.bank"
+    },
+    "Airtel Payments Bank": {
+      "entity_name": "Airtel Payments Bank Limited",
+      "nodal_email": "cybercell@airtelbank.com",
+      "secondary_email": "wecare@airtelbank.com",
+      "escalation_email": "head.fraudprevention@airtelbank.com"
+    },
+    "South Indian Bank": {
+      "entity_name": "The South Indian Bank Limited",
+      "nodal_email": "cybercell@sib.co.in",
+      "secondary_email": "nodalofficer@sib.co.in",
+      "escalation_email": "fraudprevent@sib.co.in"
+    },
+    "Indian Bank": {
+      "entity_name": "Indian Bank",
+      "nodal_email": "cybercell@indianbank.co.in",
+      "secondary_email": "nodal@indianbank.co.in",
+      "escalation_email": "ho.fraud@indianbank.co.in"
+    },
+    "Indian Overseas Bank": {
+      "entity_name": "Indian Overseas Bank",
+      "nodal_email": "cybercell@iob.in",
+      "secondary_email": "fprd@iob.in",
+      "escalation_email": "nodalofficer@iob.in"
+    },
+    "Yes Bank": {
+      "entity_name": "Yes Bank Limited",
+      "nodal_email": "cybercell@yesbank.in",
+      "secondary_email": "fraud.control@yesbank.in",
+      "escalation_email": "head.grievance@yesbank.in"
+    },
+    "State Bank of Mauritius": {
+      "entity_name": "SBM Bank (India) Limited",
+      "nodal_email": "cybercell@sbmbank.co.in",
+      "secondary_email": "customercare@sbmbank.co.in",
+      "escalation_email": "nodal.officer@sbmbank.co.in"
+    },
+    "RBL Bank": {
+      "entity_name": "RBL Bank Limited",
+      "nodal_email": "cybercell@rblbank.com",
+      "secondary_email": "nodalofficer@rblbank.com",
+      "escalation_email": "fraudcontrol@rblbank.com"
+    }
+  },
+  "payment_gateways_and_merchants": {
+    "PayU": {
+      "entity_name": "PayU Payments Private Limited",
+      "nodal_email": "lawenforcement@payu.in",
+      "secondary_email": "care@payu.in",
+      "escalation_email": "riskops@payu.in"
+    },
+    "mPokket": {
+      "entity_name": "mPokket Financial Services Private Limited",
+      "nodal_email": "ritessh@mpokket.com",
+      "secondary_email": "grievance@mpokket.com",
+      "escalation_email": "compliance@mpokket.com"
+    },
+    "Reliance Digital": {
+      "entity_name": "Reliance Retail Limited (Reliance Digital)",
+      "nodal_email": "reliancedigital@ril.com",
+      "secondary_email": "grievance.officer@ril.com",
+      "escalation_email": "fraud.investigation@ril.com"
+    },
+    "Mobikwik": {
+      "entity_name": "One MobiKwik Systems Limited",
+      "nodal_email": "nodal@mobikwik.com",
+      "secondary_email": "fraudcontrol@mobikwik.com",
+      "escalation_email": "lawenforcement@mobikwik.com"
+    },
+    "Paytm": {
+      "entity_name": "One97 Communications Limited (Paytm)",
+      "nodal_email": "lawenforcement@paytm.com",
+      "secondary_email": "nodalofficer@paytm.com",
+      "escalation_email": "cybercell@paytm.com"
+    },
+    "PhonePe": {
+      "entity_name": "PhonePe Private Limited",
+      "nodal_email": "lawenforcement@phonepe.com",
+      "secondary_email": "grievance-officer@phonepe.com",
+      "escalation_email": "fraud-ops@phonepe.com"
+    },
+    "BillDesk": {
+      "entity_name": "IndiaIdeas.com Limited (BillDesk)",
+      "nodal_email": "pgsupport@billdesk.com",
+      "secondary_email": "nodal@billdesk.com",
+      "escalation_email": "compliance@billdesk.com"
+    }
+  },
+  "telecom_operators": {
+    "Bharti Airtel": {
+      "entity_name": "Bharti Airtel Limited",
+      "nodal_email": "nodalofficer.dl@airtel.com",
+      "secondary_email": "lea.delhi@airtel.com",
+      "portal": "Airtel LEA Portal"
+    },
+    "Reliance Jio": {
+      "entity_name": "Reliance Jio Infocomm Limited",
+      "nodal_email": "jio.nodaldelhi@ril.com",
+      "secondary_email": "lea.cell@ril.com",
+      "portal": "Jio LEA Portal"
+    },
+    "Vodafone Idea": {
+      "entity_name": "Vodafone Idea Limited (Vi)",
+      "nodal_email": "nodal.delhi@vodafoneidea.com",
+      "secondary_email": "lea.support@vodafoneidea.com",
+      "portal": "Vi LEA Gateway"
+    },
+    "BSNL": {
+      "entity_name": "Bharat Sanchar Nigam Limited (BSNL)",
+      "nodal_email": "nodaldl@bsnl.co.in",
+      "secondary_email": "leadelhi@bsnl.co.in",
+      "portal": "BSNL CMS"
+    }
+  },
+  "big_tech_and_social_media": {
+    "Google": {
+      "entity_name": "Google LLC / Google India",
+      "portal": "https://lers.google.com",
+      "nodal_email": "google-law-enforcement@google.com",
+      "guidelines": "Submit requests under Section 94 BNSS via Google LERS portal."
+    },
+    "Meta / Instagram / WhatsApp": {
+      "entity_name": "Meta Platforms Inc. / WhatsApp LLC",
+      "portal": "https://sahyog.mha.gov.in / https://www.facebook.com/records/login/",
+      "nodal_email": "records@facebook.com",
+      "secondary_email": "sahyog-support@gov.in",
+      "guidelines": "Submit preservation & 94 BNSS requests via MHA Sahyog portal or Meta Law Enforcement Portal."
+    },
+    "Telegram": {
+      "entity_name": "Telegram FZ-LLC",
+      "nodal_email": "abuse@telegram.org",
+      "secondary_email": "stopCA@telegram.org"
+    }
+  }
+}
