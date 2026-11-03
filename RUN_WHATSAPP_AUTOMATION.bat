@@ -13,12 +13,15 @@ start "NCRP Webhook Service (Port 5005)" cmd /k "python whatsapp_webhook_service
 
 timeout /t 3 /nobreak >nul
 
+set "CLOUDFLARED=cloudflared"
+if exist "%ProgramFiles(x86)%\cloudflared\cloudflared.exe" set "CLOUDFLARED=%ProgramFiles(x86)%\cloudflared\cloudflared.exe"
+if exist "%ProgramFiles%\cloudflared\cloudflared.exe" set "CLOUDFLARED=%ProgramFiles%\cloudflared\cloudflared.exe"
+
 echo [2/2] Starting Cloudflare Secure HTTPS Tunnel ...
 echo.
 echo ======================================================================================
-echo Below is your Public HTTPS URL for n8n Webhook:
-echo Copy the 'https://*.trycloudflare.com' URL and set it in your n8n workflow!
+echo Copy the 'https://*.trycloudflare.com' URL below and set it in your n8n workflow!
 echo ======================================================================================
 echo.
-cloudflared tunnel --url http://localhost:5005
+"%CLOUDFLARED%" tunnel --url http://localhost:5005
 pause
