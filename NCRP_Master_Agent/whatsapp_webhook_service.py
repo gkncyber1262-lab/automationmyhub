@@ -14,11 +14,13 @@ Architecture:
      - Step 2 (IO Select): [1] SI Arvind Kumar, [2] SI Renu, [3] HC Rajendra.
      - Step 3 (FIR Reference): [1] Only NCRP Complaint (Default), [2] Registered FIR (Asks FIR No).
      - Step 4 (Notice No): Asks for starting notice number (default: 5744).
-     - Step 5 (Execution): Runs full case pipeline with pythoncom CoInitialize in worker thread.
-     - Step 6 (WhatsApp Dispatch - ALL NOTICES): Delivers Combine DOCX, 3D Chart, ALL 17 Bank
+     - Step 5 (Email Choice): Asks user whether to dispatch emails and to which address
+       [1] Default NIC (rajendra.28082016@delhipolice.gov.in), [2] Custom Email, [3] No Email.
+     - Step 6 (Execution): Runs full case pipeline with pythoncom CoInitialize in worker thread.
+     - Step 7 (WhatsApp Dispatch - ALL NOTICES): Delivers Combine DOCX, 3D Chart, ALL 17 Bank
        Notice PDFs, ATM CCTV Notices, and a complete ZIP bundle directly into WhatsApp!
-     - Step 7 (Email Automation): Automatically dispatches all bank notices via Gmail
-       (gkncyber1262@gmail.com -> rajendra.28082016@delhipolice.gov.in) with 15s delay.
+     - Step 8 (Email Automation): Dispatches bank notices via Gmail with DOCX text in body
+       and PDF attached to the chosen destination email with 15s delay.
 ========================================================================================
 """
 
@@ -47,7 +49,7 @@ from ncrp_master_agent import NCRPUnifiedAgent
 app = FastAPI(
     title="NCRP Master Agent - WhatsApp Automation Webhook Service",
     description="Automated WhatsApp bot for NCRP complaint analysis, notice dispatch and email automation",
-    version="3.2.0"
+    version="3.3.0"
 )
 
 # Agent instance
@@ -197,8 +199,15 @@ def create_case_zip_bundle(case_dir: str) -> Optional[str]:
         return None
 
 
-def process_case_background(sender: str, pdf_path: str, io_name: str, notice_no: int, fir_details: Optional[Dict[str, Any]] = None):
-    """Executes the pipeline in background, dispatches ALL files to WhatsApp, and triggers email automation."""
+def process_case_background(
+    sender: str,
+    pdf_path: str,
+    io_name: str,
+    notice_no: int,
+    fir_details: Optional[Dict[str, Any]] = None,
+    email_settings: Optional[Dict[str, Any]] = None
+):
+    """Executes the pipeline in background, dispatches ALL files to WhatsApp, and executes email automation."""
     # Initialize COM apartment for this thread (required for MS Word DOCX->PDF export)
     try:
         import pythoncom
@@ -316,38 +325,52 @@ def process_case_background(sender: str, pdf_path: str, io_name: str, notice_no:
         )
 
         # ----------------------------------------------------------------------------------
-        # 6. TRIGGER AUTOMATIC NODAL EMAIL DISPATCH VIA GMAIL
+        # 6. EMAIL AUTOMATION (IF REQUESTED BY USER)
         # ----------------------------------------------------------------------------------
-        try:
+        email_cfg = email_settings or {"send_email": False}
+        if email_cfg.get("send_email"):
+            target_email = email_cfg.get("target_email") or "rajendra.28082016@delhipolice.gov.in"
+            try:
+                send_whatsapp_text(
+                    sender,
+                    f"📧 *ईमेल ऑटोमेशन प्रारंभ:*\n"
+                    f"सभी बैंक नोटिस (बॉडी: DOCX का मूल टेक्स्ट + अटैचमेंट: आधिकारिक PDF) Gmail द्वारा *{target_email}* पर 15-15 सेकंड के सुरक्षित अंतराल पर भेजे जा रहे हैं..."
+                )
+                from email_dispatch_agent import EmailDispatchAgent
+                email_agent = EmailDispatchAgent()
+                
+                # Override forwarding target to user's chosen email
+                email_agent.config.setdefault("forwarding_target", {})["nic_email"] = target_email
+
+                email_results = email_agent.dispatch_case_notices(
+                    case_dir_or_ack=case_dir,
+                    provider="gmail",
+                    mode="forward_to_nic",
+                    dry_run=False
+                )
+                success_emails = sum(1 for r in email_results if 'SUCCESS' in r.get('status', ''))
+                
+                send_whatsapp_text(
+                    sender,
+                    f"✅ *ईमेल ऑटोमेशन सफलतापूर्वक संपन्न!*\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"• *सफलतापूर्वक प्रेषित*: {success_emails}/{len(email_results)} बैंक नोटिस ईमेल\n"
+                    f"• *प्रेषक*: gkncyber1262@gmail.com\n"
+                    f"• *गंतव्य*: {target_email}\n"
+                    f"• *ईमेल बॉडी*: DOCX का मूल ड्राफ्ट नोटिस (हेडर, बैंक खाता टेबल, धारा 94 BNSS बिंदु)\n"
+                    f"• *अटैचमेंट*: आधिकारिक हस्ताक्षरित PDF फ़ाइल\n"
+                    f"━━━━━━━━━━━━━━━━━━\n\n"
+                    f"✨ *नया केस शुरू करने के लिए कभी भी 'Start' लिखें या नई PDF भेजें।*"
+                )
+            except Exception as err_mail:
+                print(f"[Email Dispatch Error]: {err_mail}")
+                send_whatsapp_text(sender, f"⚠️ ईमेल प्रेषण में त्रुटि: {str(err_mail)}")
+        else:
             send_whatsapp_text(
                 sender,
-                "📧 *ईमेल ऑटोमेशन प्रारंभ:*\n"
-                "सभी बैंक नोडल अधिकारियों (NIC Mail Forwarding: rajendra.28082016@delhipolice.gov.in) को Gmail द्वारा 15-15 सेकंड के अंतराल पर नोटिस भेजे जा रहे हैं..."
-            )
-            from email_dispatch_agent import EmailDispatchAgent
-            email_agent = EmailDispatchAgent()
-            email_results = email_agent.dispatch_case_notices(
-                case_dir_or_ack=case_dir,
-                provider="gmail",
-                mode="forward_to_nic",
-                dry_run=False
-            )
-            success_emails = sum(1 for r in email_results if 'SUCCESS' in r.get('status', ''))
-            
-            send_whatsapp_text(
-                sender,
-                f"✅ *ईमेल ऑटोमेशन सफलतापूर्वक संपन्न!*\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"• *सफलतापूर्वक प्रेषित*: {success_emails}/{len(email_results)} बैंक नोटिस ईमेल\n"
-                f"• *प्रेषक*: gkncyber1262@gmail.com\n"
-                f"• *गंतव्य*: rajendra.28082016@delhipolice.gov.in\n"
-                f"• *नोटिस बॉडी*: HTML + PDF अटैचमेंट\n"
-                f"━━━━━━━━━━━━━━━━━━\n\n"
+                f"ℹ️ *ईमेल ऑटोमेशन*: यूजर निर्देशानुसार छोड़ दिया गया (केवल व्हाट्सएप पर नोटिस भेजे गए हैं)।\n\n"
                 f"✨ *नया केस शुरू करने के लिए कभी भी 'Start' लिखें या नई PDF भेजें।*"
             )
-        except Exception as err_mail:
-            print(f"[Email Dispatch Error]: {err_mail}")
-            send_whatsapp_text(sender, f"⚠️ ईमेल प्रेषण में त्रुटि: {str(err_mail)}")
 
     except Exception as e:
         import traceback
@@ -474,7 +497,7 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
             f"• *होल्ड राशि*: Rs. {fin.get('total_lien_amount')}\n"
             f"• *बैंक लेयर्स*: 1 से 5 (CCTV व चेक पूर्णतः बहिष्कृत)\n"
             f"━━━━━━━━━━━━━━━━━━\n\n"
-            f"📌 *[सवाल 1/3] कृपया जांच अधिकारी (IO) का चयन करें:*\n"
+            f"📌 *[सवाल 1/4] कृपया जांच अधिकारी (IO) का चयन करें:*\n"
             f"*[1]* SI ARVIND KUMAR (हस्ताक्षर: arvind.png) [Default]\n"
             f"*[2]* SI RENU (हस्ताक्षर: renu sign.png)\n"
             f"*[3]* HC RAJENDRA (हस्ताक्षर: rajendra sign.png)\n\n"
@@ -497,7 +520,7 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
 
         prompt_fir = (
             f"✅ चयनित जांच अधिकारी: *{io_name}*\n\n"
-            f"📌 *[सवाल 2/3] केस संदर्भ (Case Reference):*\n"
+            f"📌 *[सवाल 2/4] केस संदर्भ (Case Reference):*\n"
             f"क्या इस मामले में FIR दर्ज हो चुकी है?\n"
             f"*[1]* नहीं - केवल NCRP शिकायत है (Sec 94 BNSS Notice) [Default]\n"
             f"*[2]* हाँ - FIR दर्ज हो चुकी है (FIR No. दर्ज करें)\n\n"
@@ -522,7 +545,7 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
             session["fir_details"] = {"is_fir": False}
             session["state"] = "notice_no"
             prompt_notice_no = (
-                "📌 *[सवाल 3/3] नोटिस नंबर दर्ज करें:*\n"
+                "📌 *[सवाल 3/4] नोटिस नंबर दर्ज करें:*\n"
                 "डिफ़ॉल्ट नोटिस नंबर *5744* रखने के लिए केवल *Y* भेजें, या अपना इच्छित नोटिस नंबर टाइप करें (उदा. 5745):"
             )
             send_whatsapp_text(sender, prompt_notice_no)
@@ -541,35 +564,102 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         session["state"] = "notice_no"
         prompt_notice_no = (
             f"✅ दर्ज FIR नंबर: *{fir_no_input}*\n\n"
-            f"📌 *[सवाल 3/3] नोटिस नंबर दर्ज करें:*\n"
+            f"📌 *[सवाल 3/4] नोटिस नंबर दर्ज करें:*\n"
             f"डिफ़ॉल्ट नोटिस नंबर *5744* रखने के लिए केवल *Y* भेजें, या अपना इच्छित नोटिस नंबर टाइप करें (उदा. 5745):"
         )
         send_whatsapp_text(sender, prompt_notice_no)
         return {"status": "awaiting_notice_no"}
 
-    # 6. Handle Notice Number & Trigger Full Execution
+    # 6. Handle Notice Number -> Proceed to Email Question
     if session.get("state") == "notice_no" or (session.get("pdf_path") and (text.strip().isdigit() or text.strip().lower() in ["y", "yes", "ok"])):
         ans_num = text.strip()
         notice_no = 5744
         if ans_num.isdigit():
             notice_no = int(ans_num)
 
-        pdf_path = session.get("pdf_path")
-        if not pdf_path or not os.path.exists(pdf_path):
-            sample_pdf = os.path.join(agent.input_dir, "AcknowledgementNo_30810260096039.pdf")
-            pdf_path = sample_pdf
+        session["notice_no"] = notice_no
+        session["state"] = "email_choice"
 
-        io_name = session.get("io_name", "SI ARVIND KUMAR")
-        fir_details = session.get("fir_details", {"is_fir": False})
-        session["state"] = 0  # Reset session
+        prompt_email = (
+            f"✅ चयनित नोटिस नंबर: *{notice_no}*\n\n"
+            f"📧 *[सवाल 4/4] बैंक नोटिस ईमेल ऑटोमेशन:*\n"
+            f"क्या सभी बैंक नोटिस ईमेल द्वारा भी भेजने हैं?\n"
+            f"(ईमेल बॉडी में DOCX का पूरा टेक्स्ट रहेगा और साथ में हस्ताक्षरित PDF फ़ाइल अटैच होगी)\n\n"
+            f"*[1]* हाँ - rajendra.28082016@delhipolice.gov.in पर भेजें (Gmail द्वारा) [Default]\n"
+            f"*[2]* हाँ - किसी अन्य ईमेल पते पर भेजें (अपना ईमेल दर्ज करें)\n"
+            f"*[3]* नहीं - ईमेल न भेजें (केवल व्हाट्सएप पर नोटिस चाहिए)\n\n"
+            f"👉 उत्तर में केवल *1*, *2* या *3* भेजें (डिफ़ॉल्ट हेतु 1 या Y भेजें):"
+        )
+        send_whatsapp_text(sender, prompt_email)
+        return {"status": "awaiting_email_choice"}
 
-        # Launch processing in background thread
-        background_tasks.add_task(process_case_background, sender, pdf_path, io_name, notice_no, fir_details)
-        return {"status": "processing_started", "notice_no": notice_no, "io": io_name, "fir": fir_details}
+    # 7. Handle Email Choice
+    if session.get("state") == "email_choice":
+        em_choice = text.strip().lower()
 
-    # 7. Default fallback
+        if em_choice in ["2", "custom", "other"]:
+            session["state"] = "awaiting_custom_email"
+            prompt_custom = (
+                "📝 *कृपया गंतव्य ईमेल पता दर्ज करें:*\n"
+                "(उदाहरण: rajendra.28082016@delhipolice.gov.in या yourname@gmail.com लिखकर भेजें)"
+            )
+            send_whatsapp_text(sender, prompt_custom)
+            return {"status": "awaiting_custom_email"}
+
+        elif em_choice in ["3", "no", "n", "nahi", "skip"]:
+            email_settings = {"send_email": False, "target_email": None}
+            return trigger_execution(sender, session, email_settings, background_tasks)
+
+        else:
+            # Default: 1 -> Send to rajendra.28082016@delhipolice.gov.in
+            email_settings = {"send_email": True, "target_email": "rajendra.28082016@delhipolice.gov.in"}
+            return trigger_execution(sender, session, email_settings, background_tasks)
+
+    # 8. Handle Custom Email Input
+    if session.get("state") == "awaiting_custom_email":
+        custom_mail = text.strip()
+        # Basic email format check
+        if "@" in custom_mail and "." in custom_mail:
+            email_settings = {"send_email": True, "target_email": custom_mail}
+            return trigger_execution(sender, session, email_settings, background_tasks)
+        else:
+            send_whatsapp_text(sender, "⚠️ अमान्य ईमेल पता! कृपया सही ईमेल पता दर्ज करें (उदा. abc@gmail.com):")
+            return {"status": "invalid_email"}
+
+    # 9. Default fallback
     send_whatsapp_text(sender, "नमस्ते सर! नया केस शुरू करने के लिए कृपया *Start* लिखें या अपनी NCRP शिकायत की PDF फ़ाइल यहाँ भेजें।")
     return {"status": "help_sent"}
+
+
+def trigger_execution(sender: str, session: Dict[str, Any], email_settings: Dict[str, Any], background_tasks: BackgroundTasks):
+    """Helper to launch background execution once all questions are answered."""
+    pdf_path = session.get("pdf_path")
+    if not pdf_path or not os.path.exists(pdf_path):
+        sample_pdf = os.path.join(agent.input_dir, "AcknowledgementNo_30810260096039.pdf")
+        pdf_path = sample_pdf
+
+    io_name = session.get("io_name", "SI ARVIND KUMAR")
+    notice_no = session.get("notice_no", 5744)
+    fir_details = session.get("fir_details", {"is_fir": False})
+
+    session["state"] = 0  # Reset session
+
+    background_tasks.add_task(
+        process_case_background,
+        sender,
+        pdf_path,
+        io_name,
+        notice_no,
+        fir_details,
+        email_settings
+    )
+    return {
+        "status": "processing_started",
+        "notice_no": notice_no,
+        "io": io_name,
+        "fir": fir_details,
+        "email": email_settings
+    }
 
 
 if __name__ == "__main__":
