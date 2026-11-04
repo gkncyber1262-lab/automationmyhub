@@ -371,20 +371,24 @@ class NCRPUnifiedAgent:
                 return
 
         w = self._get_word_app()
-
         if w:
-
             try:
-
                 doc = w.Documents.Open(os.path.abspath(docx_path))
-
                 doc.SaveAs(os.path.abspath(pdf_path), FileFormat=17)  # wdFormatPDF = 17
-
                 doc.Close()
-
+                return
             except Exception as e:
+                print(f"[PDF Conversion] Word COM note: {e}")
 
-                print(f"[PDF Conversion] Note on {os.path.basename(docx_path)}: {e}")
+        # Headless LibreOffice / soffice fallback for Linux Cloud / Docker
+        try:
+            import subprocess
+            out_dir = os.path.dirname(os.path.abspath(pdf_path))
+            cmd = ['soffice', '--headless', '--convert-to', 'pdf', '--outdir', out_dir, os.path.abspath(docx_path)]
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=40)
+            return
+        except Exception:
+            pass
 
 
 

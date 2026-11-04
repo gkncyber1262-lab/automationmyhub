@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: ncrp-whatsapp-bot
+    env: docker
+    plan: free
+    region: frankfurt
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 5005
