@@ -46,7 +46,7 @@
     {
       "parameters": {
         "requestMethod": "POST",
-        "url": "https://buildings-measures-probably-emphasis.trycloudflare.com/webhook/whatsapp",
+        "url": "https://pee-instead-suites-indie.trycloudflare.com/webhook/whatsapp",
         "jsonParameters": true,
         "options": {},
         "bodyParametersJson": "={{ JSON.stringify($json.body) }}"
@@ -63,7 +63,7 @@
     {
       "parameters": {
         "requestMethod": "POST",
-        "url": "https://buildings-measures-probably-emphasis.trycloudflare.com/webhook/whatsapp",
+        "url": "https://pee-instead-suites-indie.trycloudflare.com/webhook/whatsapp",
         "jsonParameters": true,
         "options": {},
         "bodyParametersJson": "={{ JSON.stringify($json.body) }}"
