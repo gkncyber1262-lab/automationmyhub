@@ -312,6 +312,10 @@ def execute_pipeline_sync(
         elif "renu" in io_name.lower():
             io_rank = "SUB INSPECTOR"
             io_mobile = "9899959840"
+        else:
+            m_rank = re.match(r'^(SI|W/SI|SUB INSPECTOR|HC|HEAD CONSTABLE|ASI|ASST SUB INSPECTOR|INSP|INSPECTOR|CT|CONSTABLE)\s+(.*)', io_name, re.I)
+            if m_rank:
+                io_rank = m_rank.group(1).upper()
 
         io_override = {
             "name": io_name,
@@ -758,7 +762,8 @@ async def process_received_pdf(pdf_path: str, message, chat_id: int):
     keyboard = [
         [InlineKeyboardButton("👮‍♂️ SI ARVIND KUMAR [Default]", callback_data="io:arvind")],
         [InlineKeyboardButton("👮‍♀️ SI RENU", callback_data="io:renu")],
-        [InlineKeyboardButton("👮‍♂️ HC RAJENDRA", callback_data="io:rajendra")]
+        [InlineKeyboardButton("👮‍♂️ HC RAJENDRA", callback_data="io:rajendra")],
+        [InlineKeyboardButton("✏️ अन्य IO का नाम टाइप करें (Type Custom IO)", callback_data="io:custom")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -803,14 +808,22 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     # Step 1: IO Selection
     if data.startswith("io:"):
         choice = data.split(":")[1]
-        if choice == "renu":
+        if choice == "custom":
+            session["state"] = "awaiting_custom_io"
+            await query.edit_message_text("📝 *कृपया जांच अधिकारी (IO) का नाम व पद टाइप करके भेजें:*\n\nउदा. `SI RAMESH KUMAR` या `HC DINESH`", parse_mode=ParseMode.MARKDOWN)
+            return
+        elif choice == "renu":
             io_name = "SI RENU"
+            io_rank = "SUB INSPECTOR"
         elif choice == "rajendra":
             io_name = "HC RAJENDRA"
+            io_rank = "HEAD CONSTABLE"
         else:
             io_name = "SI ARVIND KUMAR"
+            io_rank = "SUB INSPECTOR"
 
         session["io_name"] = io_name
+        session["io_rank"] = io_rank
         session["state"] = "awaiting_fir_choice"
 
         prompt_fir = (
@@ -945,15 +958,29 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await start_command(update, context)
         return
 
-    # State: Awaiting IO by typing 1, 2, 3
-    if current_state == "awaiting_io":
-        io_name = "SI ARVIND KUMAR"
-        if text == "2" or "renu" in text.lower():
+    # State: Awaiting IO by typing or custom IO name
+    if current_state in ["awaiting_io", "awaiting_custom_io"]:
+        raw_io = text.strip()
+        if raw_io == "1":
+            io_name = "SI ARVIND KUMAR"
+            io_rank = "SUB INSPECTOR"
+        elif raw_io == "2" or "renu" in raw_io.lower():
             io_name = "SI RENU"
-        elif text == "3" or "rajendra" in text.lower():
+            io_rank = "SUB INSPECTOR"
+        elif raw_io == "3" or "rajendra" in raw_io.lower():
             io_name = "HC RAJENDRA"
+            io_rank = "HEAD CONSTABLE"
+        else:
+            m_rank = re.match(r'^(SI|W/SI|SUB INSPECTOR|HC|HEAD CONSTABLE|ASI|ASST SUB INSPECTOR|INSP|INSPECTOR|CT|CONSTABLE)\s+(.*)', raw_io, re.I)
+            if m_rank:
+                io_rank = m_rank.group(1).upper()
+                io_name = raw_io.upper()
+            else:
+                io_rank = "SUB INSPECTOR"
+                io_name = f"SI {raw_io.upper()}"
 
         session["io_name"] = io_name
+        session["io_rank"] = io_rank
         session["state"] = "awaiting_fir_choice"
 
         prompt_fir = (
@@ -1196,21 +1223,7 @@ async def dispatch_case_files(
     sent_atm_count = 0
 
     try:
-        # 1. DELIVER COMPLETE ZIP ARCHIVE FIRST (All files in 1 click!)
-        zip_bundle = create_case_zip_bundle(case_dir)
-        zip_sent = False
-        if zip_bundle and os.path.exists(zip_bundle):
-            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
-            zip_sent = await safe_send_document(
-                bot=bot,
-                chat_id=chat_id,
-                file_path=zip_bundle,
-                caption=f"📦 *सम्पूर्ण केस बंडल (All-in-One ZIP Archive)*\nसभी बैंक व ATM नोटिस, कंबाइंड DOCX, व्हाइट फ्लोचार्ट व केस डायरी - 1 क्लिक में डाउनलोड करें।",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            await asyncio.sleep(1)
-
-        # 2. DELIVER COMBINE NOTICE DOCX (If bank notices enabled)
+        # 1. DELIVER COMBINE NOTICE DOCX (If bank notices enabled) - Sent directly (NO ZIP)
         if notice_type in ["both", "bank"]:
             combine_candidates = (
                 glob.glob(os.path.join(case_dir, "combine_notice", "*.docx")) or
@@ -1223,29 +1236,31 @@ async def dispatch_case_files(
                     bot=bot,
                     chat_id=chat_id,
                     file_path=combine_docx,
-                    caption=f"📄 *कंबाइंड बैंक नोटिस (Combine Notice #{notice_no})*\nसभी बैंकों हेतु एकीकृत मांग पत्र (केवल DOCX प्रारूप)",
+                    caption=f"📄 *कंबाइंड बैंक मांग पत्र (Combine Notice #{notice_no})*\nसभी लेयर्स के बैंकों हेतु एकीकृत वैधानिक मांग पत्र (DOCX)",
                     parse_mode=ParseMode.MARKDOWN
                 )
-                await asyncio.sleep(1)
+                await asyncio.sleep(1.5)
 
-        # 2b. DELIVER LAYER-WISE IFSC BRANCH ADDRESS DIRECTORY DOCX
-        ifsc_candidates = (
-            glob.glob(os.path.join(case_dir, "Bank_Accounts_IFSC_Branch_Directory*.docx")) or
-            glob.glob(os.path.join(case_dir, "Notice_DOCX_Files", "Bank_Accounts_IFSC_Branch_Directory*.docx"))
-        )
-        if ifsc_candidates:
-            ifsc_docx = ifsc_candidates[0]
-            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
-            await safe_send_document(
-                bot=bot,
-                chat_id=chat_id,
-                file_path=ifsc_docx,
-                caption="🏢 *बैंक खाता व IFSC शाखा पता निर्देशिका (Layer-wise DOCX)*\nसभी लेयर्स के बैंक खातों के IFSC कोड एवं API से सत्यापित शाखा के भौतिक पते (Branch Address) सहित सम्पूर्ण विवरण।",
-                parse_mode=ParseMode.MARKDOWN
+        # 2. DELIVER LAYER-WISE IFSC BRANCH ADDRESS DIRECTORY DOCX (If bank notices enabled)
+        ifsc_candidates = []
+        if notice_type in ["both", "bank"]:
+            ifsc_candidates = (
+                glob.glob(os.path.join(case_dir, "Bank_Accounts_IFSC_Branch_Directory*.docx")) or
+                glob.glob(os.path.join(case_dir, "Notice_DOCX_Files", "Bank_Accounts_IFSC_Branch_Directory*.docx"))
             )
-            await asyncio.sleep(1)
+            if ifsc_candidates:
+                ifsc_docx = ifsc_candidates[0]
+                await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+                await safe_send_document(
+                    bot=bot,
+                    chat_id=chat_id,
+                    file_path=ifsc_docx,
+                    caption="🏢 *बैंक खाता व IFSC शाखा भौतिक पता निर्देशिका (Layer-wise DOCX)*\nसभी लेयर्स के बैंक खातों के IFSC कोड एवं RBI API से सत्यापित बैंक शाखा का पूर्ण भौतिक पता (Branch Physical Address)।",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                await asyncio.sleep(1.5)
 
-        # 3. DELIVER WHITE FORENSIC MONEY TRAIL FLOWCHART PHOTO
+        # 3. DELIVER WHITE FORENSIC MONEY TRAIL FLOWCHART PHOTO (Pure White Background & Deep Black Text)
         radar_imgs = (
             glob.glob(os.path.join(case_dir, "forensic_money_trail_3d*.png")) or
             glob.glob(os.path.join(case_dir, "forensic_money_trail_3d*.jpg"))
@@ -1256,46 +1271,123 @@ async def dispatch_case_files(
                 bot=bot,
                 chat_id=chat_id,
                 photo_path=radar_imgs[0],
-                caption="📊 *फोरेंसिक मनी ट्रेल 3D फ्लोचार्ट (शुद्ध सफेद बैकग्राउंड व स्पष्ट ब्लैक टेक्स्ट)*",
+                caption="📊 *फोरेंसिक मनी ट्रेल 3D फ्लोचार्ट*\n(शुद्ध सफेद बैकग्राउंड, स्पष्ट ब्लैक फॉन्ट एवं प्रत्येक नोड में API से सत्यापित बैंक शाखा का पता)",
                 parse_mode=ParseMode.MARKDOWN
             )
-            await asyncio.sleep(1)
+            await asyncio.sleep(1.5)
 
-        # 4. DELIVER INDIVIDUAL BANK NOTICE PDFS (If bank notices enabled)
+        # 3b. DELIVER 3D MOVABLE INTERACTIVE HTML VISUALIZER FILE
+        html_candidates = glob.glob(os.path.join(case_dir, "money_trail_3d_visualizer*.html"))
+        if html_candidates:
+            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+            await safe_send_document(
+                bot=bot,
+                chat_id=chat_id,
+                file_path=html_candidates[0],
+                caption="🌐 *3D मूवेबल इंटरएक्टिव मनी ट्रेल विजुअलाइज़र (HTML File)*\n(इसे किसी भी ब्राउज़र में खोलकर नोड्स को 3D में मूव/ड्रैग व ज़ूम करें)",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            await asyncio.sleep(1.5)
+
+        # 4. DELIVER INDIVIDUAL BANK NOTICES ONE BY ONE (If bank notices enabled)
         if notice_type in ["both", "bank"]:
             pdf_dir = os.path.join(case_dir, "Notice_PDF_Files")
+            docx_dir = os.path.join(case_dir, "Notice_DOCX_Files")
+            bank_pdfs = []
             if os.path.isdir(pdf_dir):
-                pdfs = sorted([os.path.join(pdf_dir, f) for f in os.listdir(pdf_dir) if f.endswith(".pdf")])
-                for idx, p in enumerate(pdfs, 1):
+                bank_pdfs = sorted([
+                    os.path.join(pdf_dir, f) for f in os.listdir(pdf_dir)
+                    if f.endswith(".pdf") and not any(k in f.lower() for k in ["atm", "cctv", "combine"])
+                ])
+            if bank_pdfs:
+                for idx, p in enumerate(bank_pdfs, 1):
                     bname = os.path.basename(p)
                     await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
                     ok = await safe_send_document(
                         bot=bot,
                         chat_id=chat_id,
                         file_path=p,
-                        caption=f"📑 [{idx}/{len(pdfs)}] {bname}"
+                        caption=f"📑 [{idx}/{len(bank_pdfs)}] बैंक नोटिस (Sec 94 BNSS):\n`{bname}`",
+                        parse_mode=ParseMode.MARKDOWN
                     )
                     if ok:
                         sent_pdf_count += 1
-                    await asyncio.sleep(1)
-
-        # 5. DELIVER ATM CCTV NOTICES (If ATM requested)
-        if notice_type in ["both", "atm"]:
-            docx_dir = os.path.join(case_dir, "Notice_DOCX_Files")
-            if os.path.isdir(docx_dir):
-                atm_notices = sorted(glob.glob(os.path.join(docx_dir, "Notice_CCTV_ATM*.docx")))
-                for idx, atm in enumerate(atm_notices, 1):
-                    bname = os.path.basename(atm)
+                    await asyncio.sleep(1.5)
+            elif os.path.isdir(docx_dir):
+                bank_docxs = sorted([
+                    os.path.join(docx_dir, f) for f in os.listdir(docx_dir)
+                    if f.endswith(".docx") and f.startswith("Notice_") and not any(k in f.lower() for k in ["atm", "cctv", "combine"])
+                ])
+                for idx, doc in enumerate(bank_docxs, 1):
+                    bname = os.path.basename(doc)
                     await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
                     ok = await safe_send_document(
                         bot=bot,
                         chat_id=chat_id,
-                        file_path=atm,
-                        caption=f"🏧 [{idx}/{len(atm_notices)}] CCTV नोटिस: {bname}"
+                        file_path=doc,
+                        caption=f"📝 [{idx}/{len(bank_docxs)}] बैंक मांग पत्र (DOCX):\n`{bname}`",
+                        parse_mode=ParseMode.MARKDOWN
                     )
                     if ok:
-                        sent_atm_count += 1
-                    await asyncio.sleep(1)
+                        sent_pdf_count += 1
+                    await asyncio.sleep(1.5)
+
+        # 5. DELIVER ATM CCTV NOTICES ONE BY ONE (If ATM requested)
+        if notice_type in ["both", "atm"]:
+            pdf_dir = os.path.join(case_dir, "Notice_PDF_Files")
+            docx_dir = os.path.join(case_dir, "Notice_DOCX_Files")
+            atm_files = []
+            if os.path.isdir(pdf_dir):
+                atm_files = sorted([
+                    os.path.join(pdf_dir, f) for f in os.listdir(pdf_dir)
+                    if f.endswith(".pdf") and any(k in f.lower() for k in ["atm", "cctv"])
+                ])
+            if not atm_files and os.path.isdir(docx_dir):
+                atm_files = sorted([
+                    os.path.join(docx_dir, f) for f in os.listdir(docx_dir)
+                    if f.endswith(".docx") and any(k in f.lower() for k in ["atm", "cctv"])
+                ])
+            for idx, atm in enumerate(atm_files, 1):
+                bname = os.path.basename(atm)
+                await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+                ok = await safe_send_document(
+                    bot=bot,
+                    chat_id=chat_id,
+                    file_path=atm,
+                    caption=f"🏧 [{idx}/{len(atm_files)}] ATM CCTV मांग पत्र:\n`{bname}`",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                if ok:
+                    sent_atm_count += 1
+                await asyncio.sleep(1.5)
+
+        # 6. DELIVER CASE DIARY & CDR ONLY IF FIR IS REGISTERED
+        is_fir = "FIR" in ref_str.upper()
+        if is_fir:
+            cd_files = glob.glob(os.path.join(case_dir, "Case_Diaries", "*.docx"))
+            for cd in cd_files:
+                await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+                await safe_send_document(
+                    bot=bot,
+                    chat_id=chat_id,
+                    file_path=cd,
+                    caption=f"📖 पुलिस केस डायरी (Zimni No. 02): `{os.path.basename(cd)}`",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                await asyncio.sleep(1.5)
+
+            cdr_files = glob.glob(os.path.join(case_dir, "CDR_Notice", "*.*"))
+            for cdr in cdr_files:
+                if cdr.endswith((".pdf", ".docx")):
+                    await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+                    await safe_send_document(
+                        bot=bot,
+                        chat_id=chat_id,
+                        file_path=cdr,
+                        caption=f"📞 टेलिकॉम CDR रिक्विजिशन पत्र: `{os.path.basename(cdr)}`",
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                    await asyncio.sleep(1.5)
 
         # 6. DELIVERY SUMMARY CARD
         email_str = "छोड़ा गया"
@@ -1311,7 +1403,7 @@ async def dispatch_case_files(
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"• *केस संदर्भ*: {safe_ref}\n"
             f"• *जांच अधिकारी*: {io_name}\n"
-            f"• *ऑल-इन-वन बंडल*: {'✅ 1 ZIP प्रेषित' if zip_sent else '⚠️ ZIP तैयार'}\n"
+            f"• *डिलीवरी मोड*: ✅ सभी नोटिस वन-बाई-वन Telegram पर प्रेषित\n"
             f"• *बैंक नोटिस (PDF)*: {sent_pdf_count} फाइल्स प्रेषित\n"
             f"• *ATM CCTV नोटिस*: {sent_atm_count} फाइल्स प्रेषित\n"
             f"• *IFSC शाखा पता निर्देशिका*: {'✅ 1 DOCX प्रेषित' if ifsc_candidates else 'उपलब्ध नहीं'}\n"

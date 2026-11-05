@@ -435,6 +435,43 @@ class NCRPUnifiedAgent:
 
 
     
+    def _normalize_transfer_row(self, r: List[Any]) -> Optional[List[str]]:
+        if not r or not any(r):
+            return None
+        r_str = ' '.join(str(c or '').replace('\n', ' ') for c in r)
+        if 'layer' not in r_str.lower():
+            return None
+        
+        # 11-column format (new NCRP standard)
+        if len(r) >= 11:
+            s_no = str(r[0] or '').strip()
+            bank_raw = str(r[2] or '').strip()
+            bank_part = re.sub(r'Layer\s*:\s*\d+', '', bank_raw, flags=re.I).strip()
+            bank_part = re.sub(r'\s+', ' ', bank_part).strip()
+            m_lay = re.search(r'(Layer\s*:\s*\d+)', bank_raw, re.I)
+            layer_tag = m_lay.group(1) if m_lay else ''
+            acc_part = str(r[3] or '').strip()
+            acc_ifsc_layer = f"{acc_part}\n{layer_tag}".strip()
+            utr = str(r[4] or '').strip()
+            tx_dt = str(r[5] or '').strip()
+            amt = str(r[6] or '0.00').strip()
+            disp = str(r[7] or '0.00').strip()
+            rem = str(r[8] or '').strip()
+            act_by = str(r[9] or '').strip()
+            act_dt = str(r[10] or '').strip()
+            return [s_no, bank_part, acc_ifsc_layer, utr, tx_dt, amt, disp, rem, act_by, act_dt]
+        
+        # 10-column format (classic NCRP standard)
+        elif len(r) == 10:
+            return [str(c or '').strip() for c in r]
+            
+        elif len(r) >= 8:
+            padded = [str(c or '').strip() for c in r]
+            while len(padded) < 10:
+                padded.append('')
+            return padded
+        return None
+
     def resolve_entity_and_account(self, raw_b: str, acc_info: str, rem: str = ""):
         raw_b = str(raw_b or '').replace('\n', ' ').strip()
         acc_info = str(acc_info or '').replace('\n', ' ').strip()
@@ -479,6 +516,18 @@ class NCRPUnifiedAgent:
             return 'IDFC First Bank', clean_acc, ifsc or 'IDFB0000000', layer, layer_num
         elif ifsc.startswith('CITI') or 'CITI' in b_upper:
             return 'Citi Bank', clean_acc, ifsc or 'CITI0000006', layer, layer_num
+        elif ifsc.startswith('BKID') or 'BANK OF INDIA' in b_upper or 'BOI' in b_upper:
+            return 'Bank of India', clean_acc, ifsc or 'BKID0009451', layer, layer_num
+        elif ifsc.startswith('CNRB') or 'CANARA' in b_upper:
+            return 'Canara Bank', clean_acc, ifsc or 'CNRB0017523', layer, layer_num
+        elif ifsc.startswith('BARB') or 'BARODA' in b_upper or 'BOB' in b_upper:
+            return 'Bank of Baroda', clean_acc, ifsc or 'BARB0000001', layer, layer_num
+        elif ifsc.startswith('IDIB') or 'INDIAN BANK' in b_upper:
+            return 'Indian Bank', clean_acc, ifsc or 'IDIB000R010', layer, layer_num
+        elif ifsc.startswith('KKBK') or 'KOTAK' in b_upper:
+            return 'Kotak Mahindra Bank', clean_acc, ifsc or 'KKBK0000001', layer, layer_num
+        elif ifsc.startswith('INDB') or 'INDUSIND' in b_upper:
+            return 'IndusInd Bank', clean_acc, ifsc or 'INDB0000001', layer, layer_num
         elif ifsc.startswith('AIRP') or 'AIRTEL' in b_upper:
             return 'Airtel Payments Bank', clean_acc, ifsc or 'AIRP0000000', layer, layer_num
         elif 'INFIBEAM' in b_upper:
@@ -678,23 +727,22 @@ class NCRPUnifiedAgent:
                     if ('bank' in hdr_str and ('account' in hdr_str or 'ifsc' in hdr_str or 'layer' in hdr_str)):
                         for r in t[1:]:
                             if r and any(r) and str(r[0] or '').strip() != 'S No.':
-                                r_str = ' '.join(str(c or '').replace('\n', ' ') for c in r)
-                                if 'layer' in r_str.lower() and len(r) == 10:
-                                    all_transfers_raw.append(r)
+                                nr = self._normalize_transfer_row(r)
+                                if nr:
+                                    all_transfers_raw.append(nr)
                         continue
 
                     # Continuation tables without header row
                     for r in t:
                         if not r or not any(r):
                             continue
-                        r_str = ' '.join(str(c or '').replace('\n', ' ') for c in r)
                         first_cell = str(r[0] or '').strip()
-                        
-                        if 'layer' in r_str.lower() and len(r) == 10:
-                            all_transfers_raw.append(r)
+                        nr = self._normalize_transfer_row(r)
+                        if nr:
+                            all_transfers_raw.append(nr)
                         elif len(r) == 10 and first_cell.isdigit() and any(re.search(r'\d{1,2}/\d{1,2}/\d{2,4}', str(c or '')) for c in r[2:4]):
                             atm_withdrawals_raw.append(r)
-                        elif len(r) == 7 and first_cell.isdigit() and any(re.search(r'\d{1,2}/\d{1,2}/\d{2,4}', str(c or '')) for c in r[2:3]):
+                        elif len(r) in [6, 7] and first_cell.isdigit() and any(re.search(r'\d{1,2}/\d{1,2}/\d{2,4}', str(c or '')) for c in r[2:4]):
                             all_holds_raw.append(r)
                         elif len(r) == 9 and first_cell.isdigit():
                             initial_debits_raw.append(r)
@@ -6682,6 +6730,28 @@ class NCRPUnifiedAgent:
                 gen_bank = str(notice_type).lower() in ["both", "bank"]
                 gen_atm = str(notice_type).lower() in ["both", "atm"]
 
+                # Clean stale notices from opposite type if re-running in existing case directory
+                if gen_bank and not gen_atm:
+                    for d in [docx_notice_dir, pdf_notice_dir, notices_base]:
+                        if os.path.exists(d):
+                            for root, _, files in os.walk(d):
+                                for f in files:
+                                    if any(k in f.lower() for k in ["atm", "cctv"]):
+                                        try:
+                                            os.remove(os.path.join(root, f))
+                                        except Exception:
+                                            pass
+                elif gen_atm and not gen_bank:
+                    for d in [docx_notice_dir, pdf_notice_dir, notices_base]:
+                        if os.path.exists(d):
+                            for root, _, files in os.walk(d):
+                                for f in files:
+                                    if f.startswith("Notice_0") or "combine" in f.lower():
+                                        try:
+                                            os.remove(os.path.join(root, f))
+                                        except Exception:
+                                            pass
+
                 if gen_bank:
                     self.generate_all_bank_notices(
                         excel_path=excel_path,
@@ -6724,8 +6794,8 @@ class NCRPUnifiedAgent:
 
         # STEP 4: Telecom CDR & SDR Requisition Letter
 
-        if all_steps or "telecom_cdr" in steps:
-
+        is_fir = ctx.get("case_meta", {}).get("case_type") == "fir" or bool(ctx.get("case_meta", {}).get("fir_no"))
+        if (all_steps or "telecom_cdr" in steps) and is_fir:
             print("\n>>> [STEP 4/10] TELECOM CDR & SDR REQUISITION LETTER (01-01-2025 TO TILL DATE)...")
 
             if not suspect_mobiles:
@@ -6802,8 +6872,7 @@ class NCRPUnifiedAgent:
 
         # STEP 8: Police Case Diary (Second Zimni under Sec 192 BNSS - PPR Form 25.54(1))
 
-        if all_steps or "case_diary" in steps:
-
+        if (all_steps or "case_diary" in steps) and is_fir:
             print("\n>>> [STEP 8/10] POLICE CASE DIARY (ZIMNI NO. 02) MODULE (SEC 192 BNSS - PPR FORM 25.54(1))...")
 
             # Only generate Case Diary No. 2 for the date of agent investigation

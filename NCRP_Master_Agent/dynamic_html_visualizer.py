@@ -71,6 +71,17 @@ def create_dynamic_html_visualizer(ctx: dict, output_html: str):
         node_id = f"node_L{l_num}_{clean_acc}"
         if node_id not in seen_nodes:
             seen_nodes[node_id] = True
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            b_branch, b_addr = "", ""
+            if ifsc:
+                try:
+                    from dynamic_flowchart import get_ifsc_branch_info
+                    bi = get_ifsc_branch_info(ifsc, base_dir)
+                    b_branch = bi.get("branch", "")
+                    b_addr = bi.get("address", "")
+                except Exception:
+                    pass
+            extra_d = (f" | Branch: {b_branch}" if b_branch else "") + (f" | Addr: {b_addr}" if b_addr else "")
             node_data = {
                 "id": node_id,
                 "name": f"{b_name[:24]}",
@@ -79,9 +90,11 @@ def create_dynamic_html_visualizer(ctx: dict, output_html: str):
                 "bank": b_name,
                 "account": clean_acc,
                 "ifsc": ifsc,
+                "branch": b_branch,
+                "address": b_addr,
                 "amount": f"Rs. {disp:,.2f}",
                 "utr": utr,
-                "details": f"Layer {l_num} Mule | Bank: {b_name} | A/c: {clean_acc} | IFSC: {ifsc}"
+                "details": f"Layer {l_num} Mule | Bank: {b_name} | A/c: {clean_acc} | IFSC: {ifsc}{extra_d}"
             }
             nodes.append(node_data)
             if l_num == 1: l1_nodes.append(node_id)

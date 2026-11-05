@@ -72,5 +72,43 @@
     "address": "National NPCI UPI Switching Gateway / Digital Wallet PG Node",
     "city": "Mumbai",
     "state": "Maharashtra"
+  },
+  "BKID0009451": {
+    "ifsc": "BKID0009451",
+    "bank": "Bank of India",
+    "branch": "JIWAJI CHOWK",
+    "address": "JIWAJI CHOWK BRANCHPINGLE KA BADAOPP JANAKJANAKGANJ JIWAJI CHOWK LASHKARGWALIOR MP",
+    "city": "GWALIOR",
+    "state": "MADHYA PRADESH",
+    "district": "GWALIOR",
+    "contact": "+917512451636"
+  },
+  "PUNB0181110": {
+    "ifsc": "PUNB0181110",
+    "bank": "Punjab National Bank",
+    "branch": "SIRSI, DISTT. UTTAR KANNADA",
+    "address": "BALAJI BLDG, ASHWINI C YELLAPUR ROAD, DISTT. 581402",
+    "city": "UTTARA KANNADA",
+    "state": "KARNATAKA",
+    "district": "SIRSI",
+    "contact": "+918384238143"
+  },
+  "YESB0MCHUPI": {
+    "ifsc": "YESB0MCHUPI",
+    "bank": "Yes Bank (UPI Virtual PG)",
+    "branch": "NPCI UPI Virtual Routing Switch",
+    "address": "National NPCI UPI Switching Gateway / Digital Wallet PG Node",
+    "city": "Mumbai",
+    "state": "Maharashtra"
+  },
+  "BKID0005873": {
+    "ifsc": "BKID0005873",
+    "bank": "Bank of India",
+    "branch": "KATRAS BAZAR",
+    "address": "PO AT KATRAS BAZAR DISTT DHANBAD",
+    "city": "DHANBAD",
+    "state": "JHARKHAND",
+    "district": "DHANBAD",
+    "contact": "+917283233140"
   }
 }
