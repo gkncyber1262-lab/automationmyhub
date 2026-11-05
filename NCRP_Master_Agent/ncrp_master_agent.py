@@ -1271,22 +1271,17 @@ class NCRPUnifiedAgent:
 
                         if any(r):
 
+                            r_s = [str(x or '') for x in r]
+                            while len(r_s) < 8:
+                                r_s.append('')
                             all_holds_raw.append([
-
-                                str(r[0] or len(all_holds_raw) + 1),
-
-                                str(r[2] or (r[1] if len(r) > 1 else '')),
-
-                                str(r[3] or ''),
-
-                                str(r[4] or (r[3] if len(r) > 3 else '0.00')),
-
-                                str(r[5] or ''),
-
-                                str(r[6] or ''),
-
-                                str(r[7] or '')
-
+                                r_s[0] or str(len(all_holds_raw) + 1),
+                                r_s[2] or r_s[1],
+                                r_s[3],
+                                r_s[4] or (r_s[3] if r_s[3] else '0.00'),
+                                r_s[5],
+                                r_s[6],
+                                r_s[7]
                             ])
 
 
@@ -1363,7 +1358,7 @@ class NCRPUnifiedAgent:
 
                     try:
 
-                        sum_l1 += float(str(r[6] or r[5] or '0').replace(',', '').strip())
+                        sum_l1 += float(str((r[6] if len(r) > 6 else None) or (r[5] if len(r) > 5 else None) or '0').replace(',', '').strip())
 
                     except Exception:
 
@@ -1835,7 +1830,7 @@ class NCRPUnifiedAgent:
 
 
 
-            amt_str = str(r[6] or r[5] or "0.00").replace('\n', '').strip()
+            amt_str = str((r[6] if len(r) > 6 else None) or (r[5] if len(r) > 5 else None) or "0.00").replace('\n', '').strip()
 
             entry_key = (layer_num, b_name, acc_no)
 
@@ -2223,19 +2218,13 @@ class NCRPUnifiedAgent:
 
 
 
-            utr = str(r[3] or '').strip().replace('\n', '')
-
-            dt_str = str(r[4] or '').strip().replace('\n', ' ')
-
-            amt_str = str(r[5] or '').strip().replace('\n', '')
-
-            disp_str = str(r[6] or '').strip().replace('\n', '')
-
-            ref_rem = str(r[7] or '').strip().replace('\n', ' ')
-
-            action_by = str(r[8] or '').strip().replace('\n', ' ')
-
-            action_dt = str(r[9] or '').strip().replace('\n', ' ')
+            utr = str(r[3] or '').strip().replace('\n', '') if len(r) > 3 else ''
+            dt_str = str(r[4] or '').strip().replace('\n', ' ') if len(r) > 4 else ''
+            amt_str = str(r[5] or '').strip().replace('\n', '') if len(r) > 5 else ''
+            disp_str = str(r[6] or '').strip().replace('\n', '') if len(r) > 6 else ''
+            ref_rem = str(r[7] or '').strip().replace('\n', ' ') if len(r) > 7 else ''
+            action_by = str(r[8] or '').strip().replace('\n', ' ') if len(r) > 8 else ''
+            action_dt = str(r[9] or '').strip().replace('\n', ' ') if len(r) > 9 else ''
 
 
 
@@ -2265,24 +2254,27 @@ class NCRPUnifiedAgent:
         ])
 
         for r in case_context.get("raw_holds", []):
-
-            ws_holds.append([
-
-                str(r[0] or '').strip(), ack_no,
-
-                str(r[1] or '').strip().replace('\n', ''),
-
-                str(r[2] or '').strip().replace('\n', ''),
-
-                str(r[3] or '').strip().replace('\n', ''),
-
-                str(r[4] or '').strip().replace('\n', ' '),
-
-                str(r[5] or '').strip().replace('\n', ' '),
-
-                str(r[6] or '').strip().replace('\n', ' ')
-
-            ])
+            if not r:
+                continue
+            s_no = str(r[0] or '').strip()
+            acc_num = str(r[1] or '').strip().replace('\n', ' ')
+            hold_dt = str(r[2] or '').strip().replace('\n', ' ')
+            hold_amt = str(r[3] or '').strip().replace('\n', ' ')
+            if len(r) == 6:
+                ref_rem = ""
+                action_by = str(r[4] or '').strip().replace('\n', ' ')
+                action_dt = str(r[5] or '').strip().replace('\n', ' ')
+            elif len(r) >= 7:
+                ref_rem = str(r[4] or '').strip().replace('\n', ' ')
+                action_by = str(r[5] or '').strip().replace('\n', ' ')
+                action_dt = str(r[6] or '').strip().replace('\n', ' ')
+            else:
+                ref_rem = str(r[4] or '').strip().replace('\n', ' ') if len(r) > 4 else ""
+                action_by = ""
+                action_dt = ""
+            action_by = re.sub(r'[\uf000-\uf8ff]', '', action_by).strip()
+            ref_rem = re.sub(r'[\uf000-\uf8ff]', '', ref_rem).strip()
+            ws_holds.append([s_no, ack_no, acc_num, hold_dt, hold_amt, ref_rem, action_by, action_dt])
 
 
 
@@ -2301,25 +2293,17 @@ class NCRPUnifiedAgent:
         if case_context.get("initial_debits"):
 
             for idx, r in enumerate(case_context["initial_debits"], 1):
-
-                s_no = str(r[0] or idx)
-
-                v_acc = str(r[1] or case_context["complainant"]["victim_account"])
-
-                tx_id = str(r[2] or '')
-
-                mode = str(r[3] or 'IMPS/UPI').replace('\n', ' ')
-
-                amt = str(r[4] or '0.00')
-
-                ref = str(r[5] or '').replace('\n', ' ')
-
-                tx_dt = str(r[6] or '').replace('\n', ' ')
-
-                cp_dt = str(r[7] or '').replace('\n', ' ')
-
+                if not r:
+                    continue
+                s_no = str(r[0] or idx) if len(r) > 0 else str(idx)
+                v_acc = str(r[1] or case_context["complainant"]["victim_account"]) if len(r) > 1 else case_context["complainant"]["victim_account"]
+                tx_id = str(r[2] or '') if len(r) > 2 else ''
+                mode = str(r[3] or 'IMPS/UPI').replace('\n', ' ') if len(r) > 3 else 'IMPS/UPI'
+                amt = str(r[4] or '0.00') if len(r) > 4 else '0.00'
+                ref = str(r[5] or '').replace('\n', ' ') if len(r) > 5 else ''
+                tx_dt = str(r[6] or '').replace('\n', ' ') if len(r) > 6 else ''
+                cp_dt = str(r[7] or '').replace('\n', ' ') if len(r) > 7 else ''
                 rem_bank = str(r[8] or case_context["complainant"]["victim_bank"]).replace('\n', ' ') if len(r) > 8 else case_context["complainant"]["victim_bank"]
-
                 ws_debits.append([s_no, v_acc, tx_id, mode, amt, ref, tx_dt, cp_dt, rem_bank])
 
         else:
@@ -5595,7 +5579,7 @@ class NCRPUnifiedAgent:
 
                 utr = str(r[3] or '').replace('\n', '')
 
-                disp_str = str(r[6] or '0').replace(',', '').replace(' ', '')
+                disp_str = str(r[6] or '0' if len(r) > 6 else '0').replace(',', '').replace(' ', '')
 
                 disp_val = float(disp_str) if disp_str.replace('.', '').isdigit() else 0.0
 
