@@ -1,0 +1,76 @@
+{
+  "UTIB0000100": {
+    "ifsc": "UTIB0000100",
+    "bank": "Axis Bank",
+    "branch": "ATM RECONCLIATION CELL",
+    "address": "UNIT NO. 12, 2ND FLOOR, CORPORATE PARK, SION TROMBAY ROAD, CHEMBUR, MUMBAI 400 071",
+    "city": "GREATER MUMBAI",
+    "state": "MAHARASHTRA"
+  },
+  "SBIN0005903": {
+    "ifsc": "SBIN0005903",
+    "bank": "State Bank of India",
+    "branch": "KHUSRUPUR",
+    "address": "POKHUSRUPUR",
+    "city": "PATNA",
+    "state": "BIHAR"
+  },
+  "CNRB0017523": {
+    "ifsc": "CNRB0017523",
+    "bank": "Canara Bank",
+    "branch": "RANCHI KUTCHERI ROAD",
+    "address": "RANCHI REGIONAL DEVELOPMENT AUTHORITY PRAGATHI SADAN KUTCHERY ROAD RANCHI RANCHI 834 001",
+    "city": "RANCHI",
+    "state": "JHARKHAND"
+  },
+  "ICIC0007353": {
+    "ifsc": "ICIC0007353",
+    "bank": "ICICI Bank",
+    "branch": "FIRAYALAL BRANCH",
+    "address": "ICICI BANK LTD., S.S. ARCADE, COURT ROAD, PUSHTAK BHAWAN COMPLEX, NEAR FIRAYALAL, MAIN ROAD, RANCHI.834001, JHARKHAND",
+    "city": "RANCHI",
+    "state": "JHARKHAND"
+  },
+  "IOBA0000366": {
+    "ifsc": "IOBA0000366",
+    "bank": "Indian Overseas Bank",
+    "branch": "RANCHI",
+    "address": "ATHMARAM BHAVAN OFF M G MARG RADHESYAM LANE RANCHI PIN 834001",
+    "city": "RANCHI",
+    "state": "JHARKHAND"
+  },
+  "IDIB000R010": {
+    "ifsc": "IDIB000R010",
+    "bank": "Indian Bank",
+    "branch": "RANCHI",
+    "address": "IST FLOOR SAINIK MARKET MAIN ROAD RANCHI RANCHI G P O PIN 834001",
+    "city": "RANCHI",
+    "state": "JHARKHAND"
+  },
+  "YESB0PTMUPI": {
+    "ifsc": "YESB0PTMUPI",
+    "bank": "Yes Bank (UPI Virtual PG)",
+    "branch": "NPCI UPI Virtual Routing Switch",
+    "address": "National NPCI UPI Switching Gateway / Digital Wallet PG Node",
+    "city": "Mumbai",
+    "state": "Maharashtra"
+  },
+  "SBIN0000691": {
+    "ifsc": "SBIN0000691",
+    "bank": "State Bank of India",
+    "branch": "NEW DELHI MAIN BRANCH",
+    "address": "11SANSAD MARG, NEW DELHI 110 001",
+    "city": "NEW DELHI",
+    "state": "DELHI",
+    "district": "NEW DELHI",
+    "contact": ""
+  },
+  "YESB0YBLUPI": {
+    "ifsc": "YESB0YBLUPI",
+    "bank": "Yes Bank (UPI Virtual PG)",
+    "branch": "NPCI UPI Virtual Routing Switch",
+    "address": "National NPCI UPI Switching Gateway / Digital Wallet PG Node",
+    "city": "Mumbai",
+    "state": "Maharashtra"
+  }
+}

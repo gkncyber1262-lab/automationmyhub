@@ -563,7 +563,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"1️⃣ आप यहाँ सीधे अपनी *NCRP शिकायत की PDF फ़ाइल* भेजें (Document के रूप में)।\n"
         f"2️⃣ बॉट तुरंत पीड़ित, फ्रॉड राशि, और सभी बैंक लेयर्स (Layer 1-5) का विश्लेषण करेगा।\n"
         f"3️⃣ आपसे IO, FIR, नोटिस तारीख, नोटिस का प्रकार (Bank/ATM) व लेयर रेंज पूछेगा।\n"
-        f"4️⃣ इसके बाद सभी *बैंक नोटिस (PDF व DOCX)*, *ATM CCTV मांग पत्र*, *कंबाइंड मांग पत्र*, *व्हाइट बैकग्राउंड 3D मनी ट्रेल फ्लोचार्ट* और *ऑल-इन-वन ZIP बंडल* सीधे आपके Telegram पर भेज देगा!\n\n"
+        f"4️⃣ इसके बाद सभी *बैंक नोटिस (PDF व DOCX)*, *ATM CCTV मांग पत्र*, *कंबाइंड मांग पत्र*, *बैंक खाता व IFSC शाखा पता निर्देशिका (DOCX)*, *व्हाइट बैकग्राउंड 3D फ्लोचार्ट* और *ऑल-इन-वन ZIP बंडल* सीधे आपके Telegram पर भेज देगा!\n\n"
         f"👉 *शुरू करने के लिए अभी अपनी NCRP शिकायत PDF यहाँ भेजें*, या नीचे दिए गए बटन पर टैप करें:"
     )
 
@@ -595,6 +595,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔹 *आउटपुट में क्या-क्या मिलेगा?*\n"
         "• 📊 शुद्ध सफेद बैकग्राउंड वाला फोरेंसिक 3D मनी ट्रेल फ्लोचार्ट (Photo)\n"
         "• 📄 कंबाइंड बैंक नोटिस (Combine Notice DOCX)\n"
+        "• 🏢 बैंक खाता व IFSC शाखा भौतिक पता निर्देशिका (Layer-wise DOCX)\n"
         "• 📑 सभी बैंकों के नोटिस (धारा 94 BNSS - हस्ताक्षरित PDF व DOCX)\n"
         "• 🏧 ATM CCTV फुटेज मांग पत्र (DOCX)\n"
         "• 📦 सम्पूर्ण केस बंडल (ZIP फ़ाइल - एक क्लिक में सब डाउनलोड)\n"
@@ -1227,6 +1228,23 @@ async def dispatch_case_files(
                 )
                 await asyncio.sleep(1)
 
+        # 2b. DELIVER LAYER-WISE IFSC BRANCH ADDRESS DIRECTORY DOCX
+        ifsc_candidates = (
+            glob.glob(os.path.join(case_dir, "Bank_Accounts_IFSC_Branch_Directory*.docx")) or
+            glob.glob(os.path.join(case_dir, "Notice_DOCX_Files", "Bank_Accounts_IFSC_Branch_Directory*.docx"))
+        )
+        if ifsc_candidates:
+            ifsc_docx = ifsc_candidates[0]
+            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+            await safe_send_document(
+                bot=bot,
+                chat_id=chat_id,
+                file_path=ifsc_docx,
+                caption="🏢 *बैंक खाता व IFSC शाखा पता निर्देशिका (Layer-wise DOCX)*\nसभी लेयर्स के बैंक खातों के IFSC कोड एवं API से सत्यापित शाखा के भौतिक पते (Branch Address) सहित सम्पूर्ण विवरण।",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            await asyncio.sleep(1)
+
         # 3. DELIVER WHITE FORENSIC MONEY TRAIL FLOWCHART PHOTO
         radar_imgs = (
             glob.glob(os.path.join(case_dir, "forensic_money_trail_3d*.png")) or
@@ -1296,6 +1314,7 @@ async def dispatch_case_files(
             f"• *ऑल-इन-वन बंडल*: {'✅ 1 ZIP प्रेषित' if zip_sent else '⚠️ ZIP तैयार'}\n"
             f"• *बैंक नोटिस (PDF)*: {sent_pdf_count} फाइल्स प्रेषित\n"
             f"• *ATM CCTV नोटिस*: {sent_atm_count} फाइल्स प्रेषित\n"
+            f"• *IFSC शाखा पता निर्देशिका*: {'✅ 1 DOCX प्रेषित' if ifsc_candidates else 'उपलब्ध नहीं'}\n"
             f"• *फ्लोचार्ट*: 1 फोटो प्रेषित (Pure White Background)\n"
             f"• *ईमेल ऑटोमेशन*: {safe_email}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"

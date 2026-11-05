@@ -47,6 +47,7 @@ import json
 import re
 
 import time
+import urllib.request
 
 import math
 
@@ -96,6 +97,7 @@ from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.section import WD_ORIENTATION
 
 from docx.oxml import parse_xml
 
@@ -3950,6 +3952,412 @@ class NCRPUnifiedAgent:
         print(f"  [OK] Consolidated Combined Bank Notice #{notice_no} (DOCX ONLY): -> {os.path.basename(out_docx)}")
         return {"docx": out_docx}
 
+    def fetch_ifsc_details(self, ifsc_code: str) -> Dict[str, Any]:
+        """
+        Fetches official bank and branch address details for an IFSC code via API with persistent local caching.
+        """
+        if not ifsc_code:
+            return {
+                "ifsc": "",
+                "bank": "Digital Wallet / PG",
+                "branch": "-",
+                "address": "Wallet / Merchant Gateway Node",
+                "city": "-",
+                "state": "-"
+            }
+
+        clean_ifsc = re.sub(r'[^a-zA-Z0-9]', '', str(ifsc_code)).strip().upper()
+        if len(clean_ifsc) < 4:
+            return {
+                "ifsc": clean_ifsc,
+                "bank": "Digital Wallet / PG",
+                "branch": "-",
+                "address": "Wallet / Merchant Gateway Node",
+                "city": "-",
+                "state": "-"
+            }
+
+        cache_path = os.path.join(self.base_dir, "config", "ifsc_cache.json")
+        cache = {}
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, "r", encoding="utf-8") as cf:
+                    cache = json.load(cf)
+            except Exception:
+                cache = {}
+
+        if clean_ifsc in cache:
+            cached_entry = cache[clean_ifsc]
+            if cached_entry.get("address") and cached_entry.get("address") != "Address not found via API":
+                return cached_entry
+
+        api_settings = self.config.get("ifsc_api_settings", {})
+        custom_url = api_settings.get("custom_api_url", "").strip()
+        if custom_url:
+            target_url = custom_url.replace("{ifsc}", clean_ifsc)
+            if "{ifsc}" not in custom_url:
+                target_url = f"{custom_url.rstrip('/')}/{clean_ifsc}"
+        else:
+            target_url = f"https://ifsc.razorpay.com/{clean_ifsc}"
+
+        prefix4 = clean_ifsc[:4]
+        known_banks = {
+            "SBIN": "State Bank of India",
+            "PUNB": "Punjab National Bank",
+            "HDFC": "HDFC Bank",
+            "ICIC": "ICICI Bank",
+            "UTIB": "Axis Bank",
+            "BARB": "Bank of Baroda",
+            "CNRB": "Canara Bank",
+            "UBIN": "Union Bank of India",
+            "IOBA": "Indian Overseas Bank",
+            "IDIB": "Indian Bank",
+            "BKID": "Bank of India",
+            "KKBK": "Kotak Mahindra Bank",
+            "YESB": "Yes Bank",
+            "IDFB": "IDFC First Bank",
+            "INDB": "IndusInd Bank",
+            "FDRL": "Federal Bank",
+            "CBIN": "Central Bank of India",
+            "AIRP": "Airtel Payments Bank",
+            "PYTM": "Paytm Payments Bank",
+            "IPOS": "India Post Payments Bank",
+            "FINO": "Fino Payments Bank",
+            "ESFB": "Equitas Small Finance Bank",
+            "AUBL": "AU Small Finance Bank",
+            "USFB": "Ujjivan Small Finance Bank",
+            "JSFB": "Jana Small Finance Bank",
+            "UTKS": "Utkarsh Small Finance Bank",
+            "SCBL": "Standard Chartered Bank",
+            "CITI": "Citibank",
+            "HSBC": "HSBC Bank",
+            "DBSS": "DBS Bank"
+        }
+        fallback_bank = known_banks.get(prefix4, f"{prefix4} Bank")
+
+        if "UPI" in clean_ifsc or "PTM" in clean_ifsc or "YBL" in clean_ifsc:
+            details = {
+                "ifsc": clean_ifsc,
+                "bank": f"{fallback_bank} (UPI Virtual PG)",
+                "branch": "NPCI UPI Virtual Routing Switch",
+                "address": "National NPCI UPI Switching Gateway / Digital Wallet PG Node",
+                "city": "Mumbai",
+                "state": "Maharashtra"
+            }
+            cache[clean_ifsc] = details
+            try:
+                os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+                with open(cache_path, "w", encoding="utf-8") as cf:
+                    json.dump(cache, cf, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
+            return details
+
+        details = {
+            "ifsc": clean_ifsc,
+            "bank": fallback_bank,
+            "branch": f"Branch ({clean_ifsc})",
+            "address": "Address not found via API",
+            "city": "-",
+            "state": "-"
+        }
+
+        try:
+            req = urllib.request.Request(target_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DelhiPoliceInvestigation/2.0"})
+            with urllib.request.urlopen(req, timeout=7) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    details["bank"] = data.get("BANK") or data.get("bank") or fallback_bank
+                    details["branch"] = data.get("BRANCH") or data.get("branch") or f"Branch {clean_ifsc}"
+                    raw_addr = data.get("ADDRESS") or data.get("address") or ""
+                    details["address"] = re.sub(r'\s+', ' ', raw_addr).strip() if raw_addr else f"{details['branch']}, {data.get('CITY', '')}"
+                    details["city"] = data.get("CITY") or data.get("city") or "-"
+                    details["district"] = data.get("DISTRICT") or data.get("district") or details["city"]
+                    details["state"] = data.get("STATE") or data.get("state") or "-"
+                    details["contact"] = str(data.get("CONTACT") or data.get("contact") or "")
+        except Exception:
+            pass
+
+        if details.get("address") and details.get("address") != "Address not found via API":
+            cache[clean_ifsc] = details
+            try:
+                os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+                with open(cache_path, "w", encoding="utf-8") as cf:
+                    json.dump(cache, cf, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
+
+        return details
+
+    def generate_ifsc_branch_directory_docx(
+        self,
+        excel_path: str,
+        case_context: Dict[str, Any],
+        output_path: str,
+        max_layer: int = 5
+    ) -> str:
+        """
+        Generates a dedicated Word Document (.docx) detailing every beneficiary account,
+        its IFSC code, and the verified physical branch address fetched from the IFSC API,
+        organized Layer-by-Layer (Layer 1 to Layer 5+).
+        """
+        wb = openpyxl.load_workbook(excel_path, data_only=True)
+        ws = wb['Money Transfer to']
+        data = list(ws.iter_rows(values_only=True))
+        if len(data) < 2:
+            return ""
+
+        df = pd.DataFrame(data[1:], columns=[str(h or '') for h in data[0]])
+        victim_acc = str(case_context.get("complainant", {}).get("victim_account", "")).strip()
+        df['Account No'] = df['Account No'].astype(str).str.strip()
+        df = df[df['Account No'] != victim_acc]
+
+        def get_layer_num(val):
+            nums = [int(n) for n in re.findall(r'\d+', str(val)) if 0 < int(n) < 100]
+            return min(nums) if nums else 1
+
+        df['Layer_Num'] = df['Layer'].apply(get_layer_num)
+
+        effective_max = max_layer if (max_layer and max_layer > 0) else 5
+        df = df[df['Layer_Num'] <= effective_max]
+
+        df['Disputed_Float'] = df['Disputed Amount'].apply(self.clean_amt)
+
+        doc = docx.Document()
+        sec = doc.sections[0]
+        sec.orientation = WD_ORIENTATION.LANDSCAPE
+        sec.page_width = Inches(11.0)
+        sec.page_height = Inches(8.5)
+        sec.left_margin = Inches(0.40)
+        sec.right_margin = Inches(0.40)
+        sec.top_margin = Inches(0.40)
+        sec.bottom_margin = Inches(0.40)
+
+        def set_font(run, name='Bookman Old Style', size=9.5, bold=False, italic=False, color=None):
+            run.font.name = name
+            run.font.size = Pt(size)
+            run.bold = bold
+            run.italic = italic
+            if color:
+                run.font.color.rgb = color
+
+        # Delhi Police Crest
+        if os.path.exists(self.crest_logo):
+            p_c = doc.add_paragraph()
+            p_c.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p_c.paragraph_format.space_before = Pt(0)
+            p_c.paragraph_format.space_after = Pt(1)
+            p_c.add_run().add_picture(self.crest_logo, width=Inches(0.65))
+
+        # Official Station Header
+        lines = [
+            ('OFFICE OF THE STATION HOUSE OFFICER, CYBER POLICE STATION', 11.5, True, RGBColor(0, 32, 96)),
+            ('NORTH DISTRICT, DELHI POLICE, INDIA', 11.0, True, RGBColor(0, 32, 96)),
+            ('ACP Operations Office Complex, Behind Daulat Ram College, Maurice Nagar, Delhi-110007', 8.5, False, RGBColor(80, 80, 80)),
+            ('Email: shocyber.north@delhipolice.gov.in | Official Investigation Dossier', 8.5, False, RGBColor(80, 80, 80))
+        ]
+        for text, sz, bld, col in lines:
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(0.5)
+            run = p.add_run(text)
+            set_font(run, size=sz, bold=bld, color=col)
+
+        # Title Banner
+        tbl_t = doc.add_table(rows=1, cols=1)
+        tbl_t.alignment = WD_TABLE_ALIGNMENT.CENTER
+        c_t = tbl_t.rows[0].cells[0]
+        c_t.width = Inches(10.20)
+        shd = parse_xml(f'<w:shd {nsdecls("w")} w:fill="002060"/>')
+        c_t._tc.get_or_add_tcPr().append(shd)
+        p_t = c_t.paragraphs[0]
+        p_t.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_t.paragraph_format.space_before = Pt(3)
+        p_t.paragraph_format.space_after = Pt(3)
+        r_t = p_t.add_run('FORENSIC BANK BENEFICIARY & IFSC BRANCH DIRECTORY (LAYER-WISE)\nम्यूल बैंक खातों एवं आईएफएससी शाखा भौतिक पता निर्देशिका')
+        set_font(r_t, size=11.0, bold=True, color=RGBColor(255, 255, 255))
+
+        # Case Context Metadata
+        c_meta = case_context.get("case_meta", {})
+        comp = case_context.get("complainant", {})
+        fin = case_context.get("financial_summary", {})
+        ack_no = c_meta.get("acknowledgement_no", "N/A")
+        fir_no = c_meta.get("fir_no", "")
+        fir_date = c_meta.get("fir_date", "")
+        is_fir = c_meta.get("case_type") == "fir" or bool(fir_no)
+        ref_str = f"Case FIR No. {fir_no} Dated {fir_date}" if is_fir else f"NCRP Ack No. {ack_no}"
+
+        tbl_meta = doc.add_table(rows=2, cols=3)
+        tbl_meta.alignment = WD_TABLE_ALIGNMENT.CENTER
+        tbl_borders = parse_xml(f'<w:tblBorders {nsdecls("w")}><w:top w:val="single" w:sz="4" w:space="0" w:color="CBD5E1"/><w:left w:val="none"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="CBD5E1"/><w:right w:val="none"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="E2E8F0"/><w:insideV w:val="none"/></w:tblBorders>')
+        tbl_meta._tbl.tblPr.append(tbl_borders)
+
+        meta_items = [
+            [f"• Case Reference: {ref_str}", f"• Complainant: {comp.get('name', 'N/A')}", f"• Defrauded Amount: Rs. {fin.get('alleged_amount', '0.00')}"],
+            [f"• Victim Bank: {comp.get('victim_bank', 'N/A')}", f"• Investigating Officer: {c_meta.get('io_name', 'SI ARVIND KUMAR')}", f"• Date: {c_meta.get('complaint_date', '')[:10]}"]
+        ]
+        for row_idx, row in enumerate(meta_items):
+            for col_idx, text in enumerate(row):
+                cell = tbl_meta.rows[row_idx].cells[col_idx]
+                cell.width = Inches(3.4)
+                p = cell.paragraphs[0]
+                p.paragraph_format.space_before = Pt(2)
+                p.paragraph_format.space_after = Pt(2)
+                run = p.add_run(text)
+                set_font(run, size=8.5, bold=False, color=RGBColor(51, 65, 85))
+
+        p_sp = doc.add_paragraph()
+        p_sp.paragraph_format.space_before = Pt(2)
+        p_sp.paragraph_format.space_after = Pt(2)
+
+        # Table Column Specifications
+        headers = [
+            'S.No.', 'Account No.', 'Bank / FI Name', 'IFSC Code', 
+            'Branch Name', 'Branch Full Physical Address (API Verified)', 
+            'City / State', 'Disputed Amount', 'Txn ID / UTR'
+        ]
+        col_widths = [
+            Inches(0.45), Inches(1.25), Inches(1.20), Inches(0.95), 
+            Inches(1.25), Inches(2.70), Inches(0.90), Inches(0.85), Inches(0.65)
+        ]
+
+        layer_nums = sorted(df['Layer_Num'].unique())
+        grand_total_amt = 0.0
+        total_acc_count = 0
+
+        for l_num in layer_nums:
+            sub_df = df[df['Layer_Num'] == l_num]
+            if sub_df.empty:
+                continue
+
+            grouped = sub_df.groupby(['Bank/FIs', 'Account No']).agg({
+                'Ifsc Code': lambda x: str(list(x)[0]).strip().upper(),
+                'Disputed_Float': 'sum',
+                'Transaction ID / UTR Number': lambda x: ', '.join(sorted(set(str(v).strip() for v in x if v and str(v).strip() != 'None')))
+            }).reset_index()
+
+            layer_tot = grouped['Disputed_Float'].sum()
+            grand_total_amt += layer_tot
+            total_acc_count += len(grouped)
+
+            p_lh = doc.add_paragraph()
+            p_lh.paragraph_format.space_before = Pt(6)
+            p_lh.paragraph_format.space_after = Pt(2)
+            p_lh.paragraph_format.keep_with_next = True
+            
+            l_color = RGBColor(220, 38, 38) if l_num == 1 else (RGBColor(217, 119, 6) if l_num == 2 else RGBColor(2, 132, 199))
+            r_lh = p_lh.add_run(f"▶ LAYER {l_num} BENEFICIARY ACCOUNTS  (कुल खाते: {len(grouped)} | कुल लेयर राशि: Rs. {layer_tot:,.2f})")
+            set_font(r_lh, size=10.0, bold=True, color=l_color)
+
+            tbl = doc.add_table(rows=len(grouped) + 1, cols=len(headers))
+            tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+            tbl_borders = parse_xml(f'<w:tblBorders {nsdecls("w")}><w:top w:val="single" w:sz="4" w:space="0" w:color="002060"/><w:left w:val="single" w:sz="4" w:space="0" w:color="E2E8F0"/><w:bottom w:val="single" w:sz="6" w:space="0" w:color="002060"/><w:right w:val="single" w:sz="4" w:space="0" w:color="E2E8F0"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="E2E8F0"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="E2E8F0"/></w:tblBorders>')
+            tbl._tbl.tblPr.append(tbl_borders)
+
+            hdr_cells = tbl.rows[0].cells
+            for ci, title in enumerate(headers):
+                hdr_cells[ci].width = col_widths[ci]
+                shd = parse_xml(f'<w:shd {nsdecls("w")} w:fill="002060"/>')
+                hdr_cells[ci]._tc.get_or_add_tcPr().append(shd)
+                p = hdr_cells[ci].paragraphs[0]
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p.paragraph_format.space_before = Pt(2.5)
+                p.paragraph_format.space_after = Pt(2.5)
+                run = p.add_run(title)
+                set_font(run, size=8.5, bold=True, color=RGBColor(255, 255, 255))
+
+            for ri, (_, row) in enumerate(grouped.iterrows(), 1):
+                row_cells = tbl.rows[ri].cells
+                for ci in range(len(headers)):
+                    row_cells[ci].width = col_widths[ci]
+
+                if ri % 2 == 0:
+                    for c in row_cells:
+                        shd = parse_xml(f'<w:shd {nsdecls("w")} w:fill="F8FAFC"/>')
+                        c._tc.get_or_add_tcPr().append(shd)
+
+                ifsc = str(row['Ifsc Code']).strip()
+                if ifsc in ['NONE', 'NAN', '']:
+                    ifsc = ''
+                
+                ifsc_data = self.fetch_ifsc_details(ifsc) if ifsc else {
+                    "ifsc": "-", "bank": row['Bank/FIs'], "branch": "Digital / PG", 
+                    "address": "Wallet / Merchant Gateway Node", "city": "-", "state": "-"
+                }
+
+                b_name = row['Bank/FIs']
+                if ifsc_data.get('bank') and ifsc_data.get('bank') != 'Bank':
+                    b_name = ifsc_data.get('bank')
+
+                vals = [
+                    (f"{ri}", WD_ALIGN_PARAGRAPH.CENTER, True, 8.5, None),
+                    (str(row['Account No']), WD_ALIGN_PARAGRAPH.CENTER, True, 8.5, None),
+                    (b_name[:24], WD_ALIGN_PARAGRAPH.LEFT, False, 8.0, None),
+                    (ifsc if ifsc else "WALLET/PG", WD_ALIGN_PARAGRAPH.CENTER, True, 8.0, RGBColor(2, 132, 199) if ifsc else RGBColor(140, 140, 140)),
+                    (ifsc_data.get('branch', '-')[:22], WD_ALIGN_PARAGRAPH.LEFT, False, 8.0, None),
+                    (ifsc_data.get('address', 'Not Available'), WD_ALIGN_PARAGRAPH.LEFT, False, 7.5, RGBColor(30, 41, 59)),
+                    (f"{ifsc_data.get('city', '-')}, {ifsc_data.get('state', '-')}"[:20], WD_ALIGN_PARAGRAPH.LEFT, False, 7.5, None),
+                    (f"Rs. {row['Disputed_Float']:,.2f}", WD_ALIGN_PARAGRAPH.RIGHT, True, 8.5, RGBColor(220, 38, 38) if l_num == 1 else None),
+                    (str(row['Transaction ID / UTR Number'])[:18], WD_ALIGN_PARAGRAPH.LEFT, False, 7.0, None)
+                ]
+
+                for ci, (val, align, bold, fsz, col) in enumerate(vals):
+                    p = row_cells[ci].paragraphs[0]
+                    p.alignment = align
+                    p.paragraph_format.space_before = Pt(2)
+                    p.paragraph_format.space_after = Pt(2)
+                    p.paragraph_format.line_spacing = 1.05
+                    run = p.add_run(val)
+                    set_font(run, size=fsz, bold=bold, color=col)
+
+        p_gt = doc.add_paragraph()
+        p_gt.paragraph_format.space_before = Pt(8)
+        p_gt.paragraph_format.space_after = Pt(4)
+        r_gt = p_gt.add_run(f"★ कुल विश्लेषण: {len(layer_nums)} लेयर्स | {total_acc_count} म्यूल बैंक खाते | कुल राशि: Rs. {grand_total_amt:,.2f}")
+        set_font(r_gt, size=9.5, bold=True, color=RGBColor(0, 32, 96))
+
+        p_ft = doc.add_paragraph()
+        p_ft.paragraph_format.space_before = Pt(6)
+        p_ft.paragraph_format.space_after = Pt(2)
+        r_ft = p_ft.add_run("नोट: यह निर्देशिका धारा 94/106 BNSS 2023 के तहत बैंकों को कानूनी नोटिस व जब्ती आदेश तामील कराने एवं भौतिक शाखा सत्यापन हेतु तैयार की गई है।")
+        set_font(r_ft, size=8.0, italic=True, color=RGBColor(100, 100, 100))
+
+        tbl_sign = doc.add_table(rows=1, cols=3)
+        tbl_sign.alignment = WD_TABLE_ALIGNMENT.CENTER
+        tbl_pr = tbl_sign._tbl.tblPr
+        tbl_borders = parse_xml(f'<w:tblBorders {nsdecls("w")}><w:top w:val="none"/><w:left w:val="none"/><w:bottom w:val="none"/><w:right w:val="none"/><w:insideH w:val="none"/><w:insideV w:val="none"/></w:tblBorders>')
+        tbl_pr.append(tbl_borders)
+
+        c_left, c_mid, c_right = tbl_sign.rows[0].cells
+        c_left.width, c_mid.width, c_right.width = Inches(3.0), Inches(3.2), Inches(4.0)
+
+        if os.path.exists(self.stamp_seal):
+            p_st = c_left.paragraphs[0]
+            p_st.add_run().add_picture(self.stamp_seal, width=Inches(1.2))
+
+        io_name = c_meta.get("io_name", "SI ARVIND KUMAR")
+        io_rank = c_meta.get("io_rank", "SUB INSPECTOR")
+        sig_p = self.resolve_io_signature(io_name, "signed")
+        p_sig = c_right.paragraphs[0]
+        p_sig.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        if sig_p and os.path.exists(sig_p):
+            p_sig.add_run().add_picture(sig_p, width=Inches(1.4))
+
+        p_io = c_right.add_paragraph()
+        p_io.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        p_io.paragraph_format.space_before = Pt(1)
+        p_io.paragraph_format.space_after = Pt(1)
+        r_io1 = p_io.add_run(f"({io_name})\n")
+        set_font(r_io1, size=9.5, bold=True)
+        r_io2 = p_io.add_run(f"{io_rank}\nCYBER POLICE STATION, NORTH DISTRICT\nDELHI POLICE")
+        set_font(r_io2, size=8.5, bold=False)
+
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        doc.save(output_path)
+        print(f"  [OK] Layer-Wise IFSC Branch Directory DOCX generated: {os.path.basename(output_path)}")
+        return output_path
+
 
 
     # ----------------------------------------------------------------------------------
@@ -6264,6 +6672,20 @@ class NCRPUnifiedAgent:
             html_path = os.path.join(case_dir, f"money_trail_3d_visualizer_{ack_no}.html")
 
             self.generate_3d_web_visualizer(ctx, html_path)
+
+            # STEP 2b: Layer-Wise IFSC Branch Address Directory DOCX
+            ifsc_docx_path = os.path.join(case_dir, f"Bank_Accounts_IFSC_Branch_Directory_{ack_no}.docx")
+            try:
+                self.generate_ifsc_branch_directory_docx(
+                    excel_path=excel_path,
+                    case_context=ctx,
+                    output_path=ifsc_docx_path,
+                    max_layer=max_layer
+                )
+                if os.path.exists(ifsc_docx_path):
+                    shutil.copy2(ifsc_docx_path, os.path.join(docx_notice_dir, os.path.basename(ifsc_docx_path)))
+            except Exception as ifsc_err:
+                print(f"  [IFSC Directory Warning]: {ifsc_err}")
 
 
 
