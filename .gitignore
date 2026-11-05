@@ -11,6 +11,12 @@ env/
 
 # Temporary run outputs (keep structure clean)
 NCRP_Master_Agent/output/_temp_exam/
+NCRP_Master_Agent/output/_wa_temp/
+NCRP_Master_Agent/output/_tg_temp/
+NCRP_Master_Agent/output/FIR_*/
+NCRP_Master_Agent/input/WA_*
+NCRP_Master_Agent/input/TG_*
+NCRP_Master_Agent/input/complaint.pdf
 archive/
 
 # Sensitive database files (if large local dumps)
