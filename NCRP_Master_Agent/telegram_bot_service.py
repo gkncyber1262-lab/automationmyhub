@@ -140,7 +140,7 @@ async def check_access(update: Update) -> bool:
         msg = (
             f"🚫 *अनाधिकृत पहुंच (Access Restricted)*\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"नमस्ते {user_name}, यह आधिकारिक दिल्ली पुलिस NCRP ऑटोमेशन बॉट है।\n\n"
+            f"नमस्ते {user_name}, यह आधिकारिक PDF TO BANK NOTICE FOR CYBER INVESTIGATION बॉट है।\n\n"
             f"• *आपकी Chat ID*: `{chat_id}`\n\n"
             f"⚠️ यह बॉट केवल अधिकृत जांच अधिकारियों हेतु सीमित है।\n"
             f"पहुंच प्राप्त करने हेतु अपनी Chat ID को `config/telegram_credentials.json` में `allowed_chat_ids` सूची में जोड़ें:\n"
@@ -309,7 +309,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     welcome_text = (
         f"👮‍♂️ *नमस्ते {user.first_name if user else 'सर'}!*\n"
-        f"*दिल्ली पुलिस NCRP साइबर अपराध अन्वेषण ऑटोमेशन Bot में आपका स्वागत है।*\n"
+        f"*PDF TO BANK NOTICE FOR CYBER INVESTIGATION*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🆔 *आपकी Telegram Chat ID*: `{chat_id}`\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -336,7 +336,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_access(update):
         return
     help_text = (
-        "📖 *NCRP मास्टर एजेंट - टेलीग्राम बॉट उपयोग निर्देश*\n"
+        "📖 *PDF TO BANK NOTICE FOR CYBER INVESTIGATION - उपयोग निर्देश*\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         "🔹 *कमांड्स:*\n"
         "• `/start` - बॉट को पुनः प्रारंभ करें\n"
@@ -942,7 +942,7 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
 # ========================================================================================
 def main():
     print("=" * 80)
-    print("  DELHI POLICE NCRP AGENT - LIVE TELEGRAM BOT SERVICE")
+    print("  PDF TO BANK NOTICE FOR CYBER INVESTIGATION - LIVE TELEGRAM BOT")
     print("=" * 80)
 
     cfg = load_telegram_credentials()

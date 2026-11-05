@@ -1,10 +1,10 @@
 @echo off
-title NCRP Cyber Crime Agent - Live Telegram Bot Service
+title PDF TO BANK NOTICE FOR CYBER INVESTIGATION - Telegram Bot
 chcp 65001 >nul
 cls
 
 echo ======================================================================================
-echo      DELHI POLICE CYBER CRIME INVESTIGATION - LIVE TELEGRAM BOT SERVICE
+echo      PDF TO BANK NOTICE FOR CYBER INVESTIGATION - LIVE TELEGRAM BOT
 echo ======================================================================================
 echo.
 echo [*] Starting NCRP Telegram Bot Service (Long Polling)...
