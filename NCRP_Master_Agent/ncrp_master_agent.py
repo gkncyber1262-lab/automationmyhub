@@ -2617,7 +2617,9 @@ class NCRPUnifiedAgent:
 
             clean_bank_name = str(bank_name).strip()
 
-            folder_name = f"{idx:02d}_{clean_bank_name.replace(' ', '_').replace('/', '_')}"
+            safe_bname = re.sub(r'[^a-zA-Z0-9_-]', '_', clean_bank_name)
+            safe_bname = re.sub(r'_+', '_', safe_bname).strip('_')
+            folder_name = f"{idx:02d}_{safe_bname}"
 
             entity_dir = os.path.join(output_base_dir, folder_name)
 
@@ -3073,7 +3075,8 @@ class NCRPUnifiedAgent:
 
 
 
-            safe_bname = clean_bank_name.replace(' ', '_').replace('/', '_')
+            safe_bname = re.sub(r'[^a-zA-Z0-9_-]', '_', clean_bank_name)
+            safe_bname = re.sub(r'_+', '_', safe_bname).strip('_')
 
             ref_tag = fir_no.replace('/', '_') if is_fir else ack_no
 
