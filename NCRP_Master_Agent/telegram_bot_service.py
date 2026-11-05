@@ -13,11 +13,15 @@ Architecture:
      - Step 1 (PDF Upload): Downloads PDF, parses fraud metrics, sends summary card.
      - Step 2 (IO Select): [SI Arvind Kumar] / [SI Renu] / [HC Rajendra] (1-tap buttons).
      - Step 3 (FIR Reference): [Only NCRP Complaint] / [Registered FIR] (Asks FIR No).
-     - Step 4 (Notice No): Starting notice number (Default: 5744 or custom).
-     - Step 5 (Email Choice): [Default NIC] / [Custom Email] / [No Email (Telegram only)].
+     - Step 3.1 (FIR Date): If FIR, prompt for FIR Date [Today / Custom].
+     - Step 4 (Notice Date): Prompt for Notice Date [Today / Custom].
+     - Step 5 (Notice Type): [Both Bank & ATM] / [Bank Only] / [ATM CCTV Only].
+     - Step 6 (Layer Range): [Layer 1] / [Layer 2] / [Layer 3] / [Layer 4] / [Layer 5] / [All Layers].
+     - Step 7 (Notice No): Starting notice number (Default: 5744 or custom).
+     - Step 8 (Email Choice): [Default NIC] / [Custom Email] / [No Email (Telegram only)].
   3. Execution & Delivery:
      - Executes full case pipeline in worker thread with pythoncom CoInitialize.
-     - Delivers Combine DOCX, 3D Chart Photo, ALL Individual Bank Notice PDFs,
+     - Delivers Combine DOCX, Pure White Flowchart Photo, Individual Bank Notice PDFs,
        ATM CCTV Notices, and a complete ZIP bundle directly into Telegram chat!
      - Optional Email Automation via Gmail dispatch.
 ========================================================================================
@@ -101,31 +105,65 @@ def save_telegram_token(token: str):
     print(f"[Config] Telegram bot token saved to {TG_CONFIG_FILE}")
 
 
+def parse_date_input(val: str) -> str:
+    """Parses arbitrary user date input into standard DD/MM/YYYY format."""
+    s = val.strip().lower()
+    today_str = datetime.datetime.now().strftime("%d/%m/%Y")
+    if s in ["today", "aaj", "t", "now", "default", "y", "yes", "d"]:
+        return today_str
+    m = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})', s)
+    if m:
+        d, mth, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if y < 100:
+            y += 2000
+        return f"{d:02d}/{mth:02d}/{y:04d}"
+    return today_str
+
+
 def get_user_session(user_id: int) -> Dict[str, Any]:
     """Gets or initializes session state for a user."""
+    today_str = datetime.datetime.now().strftime("%d/%m/%Y")
     if user_id not in USER_SESSIONS:
         USER_SESSIONS[user_id] = {
             "state": "idle",
             "pdf_path": None,
             "ack_no": None,
             "io_name": "SI ARVIND KUMAR",
-            "fir_details": {"is_fir": False},
+            "fir_details": {"is_fir": False, "fir_no": "", "fir_date": today_str},
+            "fir_date": today_str,
+            "notice_date": today_str,
+            "notice_type": "both",
+            "max_layer": 5,
             "notice_no": 5744,
             "email_settings": {"send_email": False, "target_email": None}
         }
     return USER_SESSIONS[user_id]
 
 
+def reset_user_session(user_id: int):
+    """Resets session for a user."""
+    today_str = datetime.datetime.now().strftime("%d/%m/%Y")
+    USER_SESSIONS[user_id] = {
+        "state": "awaiting_pdf",
+        "pdf_path": None,
+        "ack_no": None,
+        "io_name": "SI ARVIND KUMAR",
+        "fir_details": {"is_fir": False, "fir_no": "", "fir_date": today_str},
+        "fir_date": today_str,
+        "notice_date": today_str,
+        "notice_type": "both",
+        "max_layer": 5,
+        "notice_no": 5744,
+        "email_settings": {"send_email": False, "target_email": None}
+    }
+
+
 def is_authorized(chat_id: int) -> bool:
-    """
-    Checks if a chat_id is allowed to interact with the bot.
-    If 'allowed_chat_ids' is empty ([]), access is open to everyone.
-    If list has IDs, only matching users/chats are permitted.
-    """
+    """Checks if a chat_id is allowed to interact with the bot."""
     cfg = load_telegram_credentials()
     allowed = cfg.get("allowed_chat_ids", [])
     if not allowed:
-        return True  # Open access when empty
+        return True
     allowed_str_set = {str(item).strip() for item in allowed if str(item).strip()}
     return str(chat_id).strip() in allowed_str_set
 
@@ -156,19 +194,6 @@ async def check_access(update: Update) -> bool:
     return True
 
 
-def reset_user_session(user_id: int):
-    """Resets session for a user."""
-    USER_SESSIONS[user_id] = {
-        "state": "awaiting_pdf",
-        "pdf_path": None,
-        "ack_no": None,
-        "io_name": "SI ARVIND KUMAR",
-        "fir_details": {"is_fir": False},
-        "notice_no": 5744,
-        "email_settings": {"send_email": False, "target_email": None}
-    }
-
-
 def create_case_zip_bundle(case_dir: str) -> Optional[str]:
     """Creates a complete ZIP archive of all generated notices and files."""
     try:
@@ -177,7 +202,7 @@ def create_case_zip_bundle(case_dir: str) -> Optional[str]:
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for root, dirs, files in os.walk(case_dir):
                 for f in files:
-                    if f.endswith(('.docx', '.pdf', '.png', '.xlsx')) and not f.endswith('.zip'):
+                    if f.endswith(('.docx', '.pdf', '.png', '.jpg', '.xlsx')) and not f.endswith('.zip'):
                         fp = os.path.join(root, f)
                         rel_path = os.path.relpath(fp, case_dir)
                         zf.write(fp, rel_path)
@@ -265,6 +290,9 @@ def execute_pipeline_sync(
     io_name: str,
     notice_no: int,
     fir_details: Optional[Dict[str, Any]] = None,
+    notice_date: Optional[str] = None,
+    notice_type: str = "both",
+    max_layer: int = 5,
     email_settings: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """Synchronous pipeline runner wrapped with COM apartment initialization."""
@@ -293,6 +321,7 @@ def execute_pipeline_sync(
         }
 
         active_fir = fir_details if (fir_details and fir_details.get("is_fir")) else {"is_fir": False}
+        n_date = notice_date or datetime.datetime.now().strftime("%d/%m/%Y")
 
         # Run unified master pipeline
         res = agent.run_case_pipeline(
@@ -300,8 +329,10 @@ def execute_pipeline_sync(
             fir_details=active_fir,
             io_override=io_override,
             start_notice_no=notice_no,
-            notice_date_override=datetime.datetime.now().strftime("%d/%m/%Y"),
-            sign_mode="both"
+            notice_date_override=n_date,
+            sign_mode="both",
+            notice_type=notice_type,
+            max_layer=max_layer
         )
 
         ack = res.get("acknowledgement_no") or res.get("case_meta", {}).get("acknowledgement_no", "")
@@ -352,6 +383,9 @@ def execute_pipeline_sync(
             "active_fir": active_fir,
             "io_name": io_name,
             "notice_no": notice_no,
+            "notice_date": n_date,
+            "notice_type": notice_type,
+            "max_layer": max_layer,
             "email_summary": email_summary
         }
 
@@ -368,7 +402,148 @@ def execute_pipeline_sync(
 
 
 # ========================================================================================
-# TELEGRAM BOT HANDLERS
+# REUSABLE PROMPT FUNCTIONS (INLINE UI & BUTTONS)
+# ========================================================================================
+async def prompt_fir_date_selection(target_ui, session: Dict[str, Any]):
+    """Prompts for FIR Date."""
+    session["state"] = "awaiting_fir_date"
+    today_str = datetime.datetime.now().strftime("%d/%m/%Y")
+    fir_no = session.get("fir_details", {}).get("fir_no", "N/A")
+
+    msg_text = (
+        f"✅ दर्ज FIR नंबर: *{fir_no}*\n\n"
+        f"📅 *[सवाल 2b] FIR दर्ज होने की तारीख (FIR Date):*\n"
+        f"कृपया FIR की तारीख चुनें या सीधे टाइप करें (उदा. `DD/MM/YYYY`):"
+    )
+    keyboard = [
+        [InlineKeyboardButton(f"📅 आज की तारीख ({today_str}) [Default]", callback_data="firdate:today")],
+        [InlineKeyboardButton("✏️ अन्य तारीख टाइप करें", callback_data="firdate:custom")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    if hasattr(target_ui, "edit_message_text"):
+        await target_ui.edit_message_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+    else:
+        await target_ui.reply_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+
+
+async def prompt_notice_date_selection(target_ui, session: Dict[str, Any]):
+    """Prompts for Notice Date."""
+    session["state"] = "awaiting_notice_date"
+    today_str = datetime.datetime.now().strftime("%d/%m/%Y")
+
+    is_fir = session.get("fir_details", {}).get("is_fir", False)
+    ref_info = f"FIR No. {session.get('fir_details', {}).get('fir_no', '')} (Dated: {session.get('fir_date', today_str)})" if is_fir else f"NCRP Ack {session.get('ack_no', '')}"
+
+    msg_text = (
+        f"✅ केस संदर्भ: *{ref_info}*\n\n"
+        f"📅 *[सवाल 3] नोटिस जारी करने की तारीख (Notice Date):*\n"
+        f"बैंक व ATM नोटिसों पर कौन-सी तारीख अंकित करनी है?"
+    )
+    keyboard = [
+        [InlineKeyboardButton(f"📅 आज की तारीख ({today_str}) [Default]", callback_data="noticedate:today")],
+        [InlineKeyboardButton("✏️ अन्य तारीख टाइप करें", callback_data="noticedate:custom")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    if hasattr(target_ui, "edit_message_text"):
+        await target_ui.edit_message_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+    else:
+        await target_ui.reply_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+
+
+async def prompt_notice_type_selection(target_ui, session: Dict[str, Any]):
+    """Prompts for Notice Type (Bank Notices, ATM CCTV, or Both)."""
+    session["state"] = "awaiting_notice_type"
+    n_date = session.get("notice_date", datetime.datetime.now().strftime("%d/%m/%Y"))
+
+    msg_text = (
+        f"✅ चयनित नोटिस तारीख: *{n_date}*\n\n"
+        f"📑 *[सवाल 4] नोटिस का प्रकार चुनें (Notice Type):*\n"
+        f"आप किस प्रकार के कानूनी नोटिस तैयार करना चाहते हैं?"
+    )
+    keyboard = [
+        [InlineKeyboardButton("📑 दोनों (Bank व ATM CCTV दोनों) [Default]", callback_data="ntype:both")],
+        [InlineKeyboardButton("🏦 केवल बैंक नोटिस (Bank Notices Only)", callback_data="ntype:bank")],
+        [InlineKeyboardButton("🏧 केवल ATM CCTV नोटिस (ATM Only)", callback_data="ntype:atm")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    if hasattr(target_ui, "edit_message_text"):
+        await target_ui.edit_message_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+    else:
+        await target_ui.reply_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+
+
+async def prompt_layer_selection(target_ui, session: Dict[str, Any]):
+    """Prompts for Bank Notice Layer Range."""
+    session["state"] = "awaiting_layer"
+    ntype_str = "बैंक व ATM दोनों" if session.get("notice_type") == "both" else "केवल बैंक नोटिस"
+
+    msg_text = (
+        f"✅ चयनित नोटिस प्रकार: *{ntype_str}*\n\n"
+        f"🌐 *[सवाल 5] बैंक नोटिस लेयर रेंज (Layer Limit):*\n"
+        f"बैंक नोटिस किस लेयर तक तैयार करने हैं?\n"
+        f"(लेयर रेंज चुनकर केवल इच्छित लेयर्स के बैंक नोटिस तैयार करें):"
+    )
+    keyboard = [
+        [InlineKeyboardButton("1️⃣ केवल 1st Layer (Entry Mules)", callback_data="layer:1")],
+        [InlineKeyboardButton("2️⃣ 2nd Layer तक (Layers 1-2)", callback_data="layer:2")],
+        [InlineKeyboardButton("3️⃣ 3rd Layer तक (Layers 1-3)", callback_data="layer:3")],
+        [InlineKeyboardButton("4️⃣ 4th Layer तक (Layers 1-4)", callback_data="layer:4")],
+        [InlineKeyboardButton("5️⃣ 5th Layer तक (Layers 1-5)", callback_data="layer:5")],
+        [InlineKeyboardButton("🌐 सभी लेयर्स (All Layers) [Default]", callback_data="layer:all")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    if hasattr(target_ui, "edit_message_text"):
+        await target_ui.edit_message_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+    else:
+        await target_ui.reply_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+
+
+async def prompt_notice_no_selection(target_ui, session: Dict[str, Any]):
+    """Prompts for Starting Notice Number."""
+    session["state"] = "awaiting_notice_no"
+    max_l = session.get("max_layer", 5)
+    layer_desc = "सभी लेयर्स (1-5+)" if max_l >= 900 else f"लेयर {max_l} तक"
+
+    msg_text = (
+        f"✅ चयनित लेयर रेंज: *{layer_desc}*\n\n"
+        f"🔢 *[सवाल 6] शुरुआती नोटिस नंबर (Starting Notice No.):*\n"
+        f"क्या आप डिफ़ॉल्ट नोटिस नंबर *5744* रखना चाहते हैं?"
+    )
+    keyboard = [
+        [InlineKeyboardButton("🔢 डिफ़ॉल्ट नोटिस नंबर (5744) [Default]", callback_data="noticeno:5744")],
+        [InlineKeyboardButton("✏️ अन्य नोटिस नंबर टाइप करें", callback_data="noticeno:custom")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    if hasattr(target_ui, "edit_message_text"):
+        await target_ui.edit_message_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+    else:
+        await target_ui.reply_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+
+
+async def prompt_email_selection(target_ui, session: Dict[str, Any]):
+    """Prompts for Email Automation."""
+    session["state"] = "awaiting_email_choice"
+    notice_no = session.get("notice_no", 5744)
+    msg_text = (
+        f"✅ चयनित नोटिस नंबर: *{notice_no}*\n\n"
+        f"📧 *[सवाल 7] बैंक नोटिस ईमेल ऑटोमेशन:*\n"
+        f"क्या सभी बैंक नोटिस ईमेल द्वारा भी भेजने हैं?\n"
+        f"(ईमेल बॉडी में DOCX का पूरा ड्राफ्ट रहेगा और साथ में हस्ताक्षरित PDF फ़ाइल अटैच होगी)"
+    )
+    keyboard = [
+        [InlineKeyboardButton("📧 डिफ़ॉल्ट NIC ईमेल (Gmail द्वारा) [Default]", callback_data="email:default")],
+        [InlineKeyboardButton("✉️ अन्य ईमेल पता दर्ज करें", callback_data="email:custom")],
+        [InlineKeyboardButton("⏭️ ईमेल न भेजें (केवल Telegram पर चाहिए)", callback_data="email:skip")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    if hasattr(target_ui, "edit_message_text"):
+        await target_ui.edit_message_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+    else:
+        await target_ui.reply_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+
+
+# ========================================================================================
+# TELEGRAM BOT COMMAND HANDLERS
 # ========================================================================================
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles /start command with rich welcome card & inline quick actions."""
@@ -387,8 +562,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💡 *यह बॉट कैसे कार्य करता है?*\n"
         f"1️⃣ आप यहाँ सीधे अपनी *NCRP शिकायत की PDF फ़ाइल* भेजें (Document के रूप में)।\n"
         f"2️⃣ बॉट तुरंत पीड़ित, फ्रॉड राशि, और सभी बैंक लेयर्स (Layer 1-5) का विश्लेषण करेगा।\n"
-        f"3️⃣ आपसे IO, FIR और नोटिस नंबर के विकल्प पूछेगा।\n"
-        f"4️⃣ इसके बाद सभी *17+ बैंक नोटिस (PDF व DOCX)*, *कंबाइंड मांग पत्र*, *3D मनी ट्रेल चार्ट* और *ऑल-इन-वन ZIP बंडल* सीधे आपके Telegram पर भेज देगा!\n\n"
+        f"3️⃣ आपसे IO, FIR, नोटिस तारीख, नोटिस का प्रकार (Bank/ATM) व लेयर रेंज पूछेगा।\n"
+        f"4️⃣ इसके बाद सभी *बैंक नोटिस (PDF व DOCX)*, *ATM CCTV मांग पत्र*, *कंबाइंड मांग पत्र*, *व्हाइट बैकग्राउंड 3D मनी ट्रेल फ्लोचार्ट* और *ऑल-इन-वन ZIP बंडल* सीधे आपके Telegram पर भेज देगा!\n\n"
         f"👉 *शुरू करने के लिए अभी अपनी NCRP शिकायत PDF यहाँ भेजें*, या नीचे दिए गए बटन पर टैप करें:"
     )
 
@@ -413,14 +588,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• `/start` - बॉट को पुनः प्रारंभ करें\n"
         "• `/sample` - सिस्टम में पहले से मौजूद सैंपल NCRP PDF प्रोसेस करें\n"
         "• `/status` - सिस्टम व इंजन स्थिति जांचें\n"
+        "• `/resend` - नवीनतम केस की सभी फाइल्स पुनः Telegram पर भेजें\n"
         "• `/reset` - वर्तमान प्रक्रिया को रद्द करें\n\n"
         "🔹 *दस्तावेज़ कैसे भेजें?*\n"
         "Telegram के 'Attach File' (Paperclip 📎 आइकन) पर क्लिक करके NCRP शिकायत की PDF फ़ाइल चुनें।\n\n"
         "🔹 *आउटपुट में क्या-क्या मिलेगा?*\n"
+        "• 📊 शुद्ध सफेद बैकग्राउंड वाला फोरेंसिक 3D मनी ट्रेल फ्लोचार्ट (Photo)\n"
         "• 📄 कंबाइंड बैंक नोटिस (Combine Notice DOCX)\n"
-        "• 📊 3D मनी ट्रेल विज़ुअल चार्ट (Photo)\n"
-        "• 📑 सभी बैंकों के नोटिस (धारा 94 BNSS - हस्ताक्षरित PDF)\n"
-        "• 🏧 ATM CCTV नोटिस (DOCX)\n"
+        "• 📑 सभी बैंकों के नोटिस (धारा 94 BNSS - हस्ताक्षरित PDF व DOCX)\n"
+        "• 🏧 ATM CCTV फुटेज मांग पत्र (DOCX)\n"
         "• 📦 सम्पूर्ण केस बंडल (ZIP फ़ाइल - एक क्लिक में सब डाउनलोड)\n"
         "• 📧 वैकल्पिक: NIC ईमेल पर सीधा प्रेषण\n"
     )
@@ -451,7 +627,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_text = (
         "🟢 *NCRP Unified Master Agent: सक्रिय (ONLINE)*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"• *वर्जन*: 3.5.0 (Telegram Live Integration)\n"
+        f"• *वर्जन*: 3.6.0 (White Flowchart & Custom Filters)\n"
         f"• *आधार निर्देशिका*: `{BASE_DIR}`\n"
         f"• *कुल प्रोसेस्ड केस*: {len(output_cases)}\n"
         f"• *कानूनी ढांचा*: धारा 94/106 BNSS 2023, IT Act 66D\n"
@@ -501,7 +677,8 @@ async def resend_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         case_dir=latest_case,
         notice_no=5744,
         io_name="INVESTIGATING OFFICER",
-        ref_str=cname
+        ref_str=cname,
+        notice_type="both"
     )
 
 
@@ -525,10 +702,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text("⚠️ केवल PDF फ़ाइलें ही स्वीकार्य हैं। कृपया अपनी NCRP शिकायत की PDF फ़ाइल भेजें।")
         return
 
-    # Send status
     status_msg = await message.reply_text(f"📥 फ़ाइल प्राप्त हो रही है: `{fname}`...\nकृपया कुछ क्षण प्रतीक्षा करें।", parse_mode=ParseMode.MARKDOWN)
 
-    # Generate safe local file path
     ts = int(time.time())
     clean_fname = re.sub(r'[^a-zA-Z0-9_.-]', '_', fname)
     local_pdf_path = os.path.join(agent.input_dir, f"TG_{chat_id}_{ts}_{clean_fname}")
@@ -546,18 +721,16 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def process_received_pdf(pdf_path: str, message, chat_id: int):
-    """Parses PDF and presents the 4-step interview card with Inline Buttons."""
+    """Parses PDF and presents the interactive questionnaire with Inline Buttons."""
     session = get_user_session(chat_id)
     session["pdf_path"] = pdf_path
     session["state"] = "awaiting_io"
 
-    # Send typing / progress indicator
     prog_msg = await message.reply_text("⏳ *NCRP शिकायत का विश्लेषण व मनी ट्रेल एक्सट्रैक्शन जारी है...*", parse_mode=ParseMode.MARKDOWN)
 
     temp_dir = os.path.join(agent.output_dir, "_tg_temp")
     os.makedirs(temp_dir, exist_ok=True)
 
-    # Run parsing in executor
     loop = asyncio.get_running_loop()
     ctx = await loop.run_in_executor(EXECUTOR, agent.parse_ncrp_pdf, pdf_path, temp_dir)
 
@@ -576,9 +749,9 @@ async def process_received_pdf(pdf_path: str, message, chat_id: int):
         f"• *पीड़ित का नाम*: {comp.get('name', 'N/A')}\n"
         f"• *ठगी की राशि*: Rs. {fin.get('alleged_amount', '0')}\n"
         f"• *होल्ड राशि*: Rs. {fin.get('total_lien_amount', '0')}\n"
-        f"• *बैंक लेयर्स*: 1 से 5 (CCTV व चेक पूर्णतः बहिष्कृत)\n"
+        f"• *बैंक लेयर्स*: 1 से 5 (CCTV व चेक पूर्णतः विश्लेषित)\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📌 *[सवाल 1/4] कृपया जांच अधिकारी (IO) का चयन करें:*"
+        f"📌 *[सवाल 1] कृपया जांच अधिकारी (IO) का चयन करें:*"
     )
 
     keyboard = [
@@ -641,7 +814,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
         prompt_fir = (
             f"✅ चयनित जांच अधिकारी: *{io_name}*\n\n"
-            f"📌 *[सवाल 2/4] केस संदर्भ (Case Reference):*\n"
+            f"📌 *[सवाल 2] केस संदर्भ (Case Reference):*\n"
             f"क्या इस मामले में FIR दर्ज हो चुकी है?"
         )
         keyboard = [
@@ -664,20 +837,65 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             return
         else:
             session["fir_details"] = {"is_fir": False}
-            session["state"] = "awaiting_notice_no"
-            prompt_notice_no = (
-                "✅ केस संदर्भ: *NCRP शिकायत (Sec 94 BNSS)*\n\n"
-                "📌 *[सवाल 3/4] नोटिस नंबर (Starting Notice No.):*\n"
-                "क्या आप डिफ़ॉल्ट नोटिस नंबर *5744* रखना चाहते हैं?"
-            )
-            keyboard = [
-                [InlineKeyboardButton("🔢 डिफ़ॉल्ट नोटिस नंबर (5744) [Default]", callback_data="noticeno:5744")],
-                [InlineKeyboardButton("✏️ अन्य नोटिस नंबर टाइप करें", callback_data="noticeno:custom")]
-            ]
-            await query.edit_message_text(prompt_notice_no, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+            # Directly move to Step 3: Notice Date Selection
+            await prompt_notice_date_selection(query, session)
             return
 
-    # Step 3: Notice Number Selection
+    # Step 2b: FIR Date Selection
+    if data.startswith("firdate:"):
+        choice = data.split(":")[1]
+        if choice == "today":
+            today_str = datetime.datetime.now().strftime("%d/%m/%Y")
+            session["fir_date"] = today_str
+            if session.get("fir_details"):
+                session["fir_details"]["fir_date"] = today_str
+            await prompt_notice_date_selection(query, session)
+            return
+        else:
+            session["state"] = "awaiting_fir_date_input"
+            await query.edit_message_text("📝 *कृपया FIR दर्ज होने की तारीख (DD/MM/YYYY) लिखकर भेजें:*", parse_mode=ParseMode.MARKDOWN)
+            return
+
+    # Step 3: Notice Date Selection
+    if data.startswith("noticedate:"):
+        choice = data.split(":")[1]
+        if choice == "today":
+            today_str = datetime.datetime.now().strftime("%d/%m/%Y")
+            session["notice_date"] = today_str
+            await prompt_notice_type_selection(query, session)
+            return
+        else:
+            session["state"] = "awaiting_notice_date_input"
+            await query.edit_message_text("📝 *कृपया नोटिस जारी करने की तारीख (DD/MM/YYYY) लिखकर भेजें:*", parse_mode=ParseMode.MARKDOWN)
+            return
+
+    # Step 4: Notice Type Selection
+    if data.startswith("ntype:"):
+        ntype = data.split(":")[1]
+        session["notice_type"] = ntype
+        if ntype in ["both", "bank"]:
+            await prompt_layer_selection(query, session)
+        else:
+            # For ATM only, skip layer selection and set max_layer=5
+            session["max_layer"] = 5
+            await prompt_notice_no_selection(query, session)
+        return
+
+    # Step 5: Layer Limit Selection
+    if data.startswith("layer:"):
+        val = data.split(":")[1]
+        if val == "all":
+            max_l = 999
+        else:
+            try:
+                max_l = int(val)
+            except:
+                max_l = 5
+        session["max_layer"] = max_l
+        await prompt_notice_no_selection(query, session)
+        return
+
+    # Step 6: Notice Number Selection
     if data.startswith("noticeno:"):
         val = data.split(":")[1]
         if val == "custom":
@@ -686,16 +904,15 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             return
         else:
             session["notice_no"] = int(val)
-            session["state"] = "awaiting_email_choice"
             await prompt_email_selection(query, session)
             return
 
-    # Step 4: Email Selection
+    # Step 7: Email Selection
     if data.startswith("email:"):
         choice = data.split(":")[1]
         if choice == "custom":
             session["state"] = "awaiting_custom_email"
-            await query.edit_message_text("📝 *कृपया गंतव्य ईमेल पता दर्ज करें (उदा. rajendra.28082016@delhipolice.gov.in या officer@gmail.com):*", parse_mode=ParseMode.MARKDOWN)
+            await query.edit_message_text("📝 *कृपया गंतव्य ईमेल पता दर्ज करें (उदा. officer@delhipolice.gov.in):*", parse_mode=ParseMode.MARKDOWN)
             return
         elif choice == "skip":
             session["email_settings"] = {"send_email": False, "target_email": None}
@@ -703,33 +920,10 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             await trigger_execution_telegram(query.message, chat_id, session, context)
             return
         else:
-            # Default NIC Email
             session["email_settings"] = {"send_email": True, "target_email": "rajendra.28082016@delhipolice.gov.in"}
             await query.edit_message_text("✅ *ईमेल ऑटोमेशन: rajendra.28082016@delhipolice.gov.in पर निर्धारित।*", parse_mode=ParseMode.MARKDOWN)
             await trigger_execution_telegram(query.message, chat_id, session, context)
             return
-
-
-async def prompt_email_selection(target_ui, session: Dict[str, Any]):
-    """Prompts Question 4 for email automation."""
-    notice_no = session.get("notice_no", 5744)
-    prompt_email = (
-        f"✅ चयनित नोटिस नंबर: *{notice_no}*\n\n"
-        f"📧 *[सवाल 4/4] बैंक नोटिस ईमेल ऑटोमेशन:*\n"
-        f"क्या सभी बैंक नोटिस ईमेल द्वारा भी भेजने हैं?\n"
-        f"(ईमेल बॉडी में DOCX का पूरा ड्राफ्ट रहेगा और साथ में हस्ताक्षरित PDF फ़ाइल अटैच होगी)"
-    )
-    keyboard = [
-        [InlineKeyboardButton("📧 डिफ़ॉल्ट NIC ईमेल (Gmail द्वारा) [Default]", callback_data="email:default")],
-        [InlineKeyboardButton("✉️ अन्य ईमेल पता दर्ज करें", callback_data="email:custom")],
-        [InlineKeyboardButton("⏭️ ईमेल न भेजें (केवल Telegram पर चाहिए)", callback_data="email:skip")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    if hasattr(target_ui, "edit_message_text"):
-        await target_ui.edit_message_text(prompt_email, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
-    else:
-        await target_ui.reply_text(prompt_email, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
 
 
 # ========================================================================================
@@ -745,7 +939,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     session = get_user_session(chat_id)
     current_state = session.get("state", "idle")
 
-    # Reset or Start by text
+    # Quick global commands by text
     if text.lower() in ["hi", "hello", "start", "shuru", "reset"]:
         await start_command(update, context)
         return
@@ -763,7 +957,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         prompt_fir = (
             f"✅ चयनित जांच अधिकारी: *{io_name}*\n\n"
-            f"📌 *[सवाल 2/4] क्या FIR दर्ज हो चुकी है?*\n"
+            f"📌 *[सवाल 2] क्या FIR दर्ज हो चुकी है?*\n"
             f"*[1]* केवल NCRP शिकायत है [Default]\n"
             f"*[2]* FIR दर्ज हो चुकी है\n\n"
             f"👉 1 या 2 लिखकर भेजें:"
@@ -783,39 +977,64 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         else:
             session["fir_details"] = {"is_fir": False}
-            session["state"] = "awaiting_notice_no"
-            prompt_notice_no = (
-                "📌 *[सवाल 3/4] नोटिस नंबर:*\n"
-                "डिफ़ॉल्ट नोटिस नंबर *5744* रखने के लिए *Y* भेजें या इच्छित नोटिस नंबर टाइप करें:"
-            )
-            keyboard = [
-                [InlineKeyboardButton("🔢 डिफ़ॉल्ट नोटिस नंबर (5744) [Default]", callback_data="noticeno:5744")],
-                [InlineKeyboardButton("✏️ अन्य नोटिस नंबर टाइप करें", callback_data="noticeno:custom")]
-            ]
-            await message.reply_text(prompt_notice_no, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+            await prompt_notice_date_selection(message, session)
             return
 
     # State: Awaiting FIR Number
     if current_state == "awaiting_fir_number":
         fir_no_input = text.strip()
+        today_str = datetime.datetime.now().strftime("%d/%m/%Y")
         session["fir_details"] = {
             "is_fir": True,
             "fir_no": fir_no_input,
-            "fir_date": datetime.datetime.now().strftime("%d/%m/%Y"),
+            "fir_date": today_str,
             "fir_sections": "318(4) BNS & 66D IT Act",
             "police_station": "CYBER POLICE STATION NORTH DISTRICT"
         }
-        session["state"] = "awaiting_notice_no"
-        prompt_notice_no = (
-            f"✅ दर्ज FIR नंबर: *{fir_no_input}*\n\n"
-            f"📌 *[सवाल 3/4] नोटिस नंबर:*\n"
-            f"डिफ़ॉल्ट नोटिस नंबर *5744* रखने के लिए *Y* भेजें या इच्छित नोटिस नंबर टाइप करें:"
-        )
-        keyboard = [
-            [InlineKeyboardButton("🔢 डिफ़ॉल्ट नोटिस नंबर (5744) [Default]", callback_data="noticeno:5744")],
-            [InlineKeyboardButton("✏️ अन्य नोटिस नंबर टाइप करें", callback_data="noticeno:custom")]
-        ]
-        await message.reply_text(prompt_notice_no, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+        await prompt_fir_date_selection(message, session)
+        return
+
+    # State: Awaiting FIR Date Input
+    if current_state in ["awaiting_fir_date", "awaiting_fir_date_input"]:
+        parsed_d = parse_date_input(text)
+        session["fir_date"] = parsed_d
+        if session.get("fir_details"):
+            session["fir_details"]["fir_date"] = parsed_d
+        await prompt_notice_date_selection(message, session)
+        return
+
+    # State: Awaiting Notice Date Input
+    if current_state in ["awaiting_notice_date", "awaiting_notice_date_input"]:
+        parsed_nd = parse_date_input(text)
+        session["notice_date"] = parsed_nd
+        await prompt_notice_type_selection(message, session)
+        return
+
+    # State: Awaiting Notice Type
+    if current_state == "awaiting_notice_type":
+        s = text.lower().strip()
+        if "atm" in s or s == "3":
+            session["notice_type"] = "atm"
+            session["max_layer"] = 5
+            await prompt_notice_no_selection(message, session)
+        elif "bank" in s or s == "2":
+            session["notice_type"] = "bank"
+            await prompt_layer_selection(message, session)
+        else:
+            session["notice_type"] = "both"
+            await prompt_layer_selection(message, session)
+        return
+
+    # State: Awaiting Layer
+    if current_state == "awaiting_layer":
+        s = text.lower().strip()
+        if "all" in s or "sab" in s or "6" in s:
+            session["max_layer"] = 999
+        elif s in ["1", "2", "3", "4", "5"]:
+            session["max_layer"] = int(s)
+        else:
+            session["max_layer"] = 5
+        await prompt_notice_no_selection(message, session)
         return
 
     # State: Awaiting Notice Number
@@ -824,7 +1043,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         if text.isdigit():
             notice_val = int(text)
         session["notice_no"] = notice_val
-        session["state"] = "awaiting_email_choice"
         await prompt_email_selection(message, session)
         return
 
@@ -875,19 +1093,29 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
     io_name = session.get("io_name", "SI ARVIND KUMAR")
     notice_no = session.get("notice_no", 5744)
     fir_details = session.get("fir_details", {"is_fir": False})
+    notice_date = session.get("notice_date", datetime.datetime.now().strftime("%d/%m/%Y"))
+    notice_type = session.get("notice_type", "both")
+    max_layer = session.get("max_layer", 5)
     email_settings = session.get("email_settings", {"send_email": False})
 
     session["state"] = "processing"
+
+    ntype_label = "बैंक व ATM CCTV दोनों" if notice_type == "both" else ("केवल बैंक नोटिस" if notice_type == "bank" else "केवल ATM CCTV नोटिस")
+    layer_label = "सभी लेयर्स (1-5+)" if max_layer >= 900 else f"लेयर {max_layer} तक"
+    case_ref_label = f"Case FIR No. {fir_details['fir_no']} Dt: {fir_details.get('fir_date', notice_date)}" if fir_details.get("is_fir") else f"NCRP Ack {session.get('ack_no', '')}"
 
     start_banner = (
         f"🚀 *केस प्रोसेसिंग प्रारंभ हो चुकी है!* ⏳\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"• *जांच अधिकारी*: {io_name}\n"
-        f"• *नोटिस नंबर*: {notice_no}\n"
-        f"• *केस संदर्भ*: {'FIR No. ' + fir_details['fir_no'] if fir_details.get('is_fir') else 'NCRP Ack'}\n"
+        f"• *केस संदर्भ*: {case_ref_label}\n"
+        f"• *नोटिस तारीख*: {notice_date}\n"
+        f"• *नोटिस प्रकार*: {ntype_label}\n"
+        f"• *लेयर रेंज*: {layer_label}\n"
+        f"• *शुरुआती नोटिस*: #{notice_no}\n"
         f"• *ईमेल ऑटोमेशन*: {'सक्रिय (' + email_settings.get('target_email', '') + ')' if email_settings.get('send_email') else 'अक्रिय'}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚡ *प्रक्रिया प्रगति:* मनी ट्रेल विश्लेषण, धारा 94 नोटिस (PDF व DOCX), कंबाइंड नोटिस, 3D विज़ुअल फ्लोचार्ट तैयार किए जा रहे हैं...\n"
+        f"⚡ *प्रक्रिया प्रगति:* मनी ट्रेल विश्लेषण, शुद्ध सफेद बैकग्राउंड 3D फ्लोचार्ट, धारा 94 BNSS नोटिस, कंबाइंड मांग पत्र तैयार किए जा रहे हैं...\n"
         f"कृपया *25-35 सेकंड* प्रतीक्षा करें..."
     )
     status_msg = await message.reply_text(start_banner, parse_mode=ParseMode.MARKDOWN)
@@ -901,6 +1129,9 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
         io_name,
         notice_no,
         fir_details,
+        notice_date,
+        notice_type,
+        max_layer,
         email_settings
     )
 
@@ -918,7 +1149,7 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
 
     await status_msg.edit_text(
         f"✅ *सफलतापूर्वक तैयार!* ({safe_ref})\n"
-        f"सभी बैंक व ATM नोटिस, कंबाइंड DOCX, 3D चार्ट और सम्पूर्ण ZIP बंडल आपके Telegram पर भेजे जा रहे हैं...",
+        f"कानूनी नोटिस (PDF व DOCX), व्हाइट बैकग्राउंड 3D फ्लोचार्ट और सम्पूर्ण ZIP बंडल आपके Telegram पर भेजे जा रहे हैं...",
         parse_mode=ParseMode.MARKDOWN
     )
 
@@ -932,6 +1163,7 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
             notice_no=notice_no,
             io_name=io_name,
             ref_str=ref_str,
+            notice_type=notice_type,
             email_summary=res.get("email_summary")
         )
     finally:
@@ -945,16 +1177,17 @@ async def dispatch_case_files(
     notice_no: int,
     io_name: str,
     ref_str: str,
+    notice_type: str = "both",
     email_summary: Optional[Dict[str, Any]] = None
 ):
     """
     Delivers all generated notices and files to Telegram safely.
     Strategy:
       1. Deliver Complete ZIP Archive FIRST (guarantees officer has 100% of files in 1 tap!).
-      2. Deliver Combine Notice DOCX.
-      3. Deliver 3D Forensic Money Trail Photo.
-      4. Deliver Individual Bank Notice PDFs with safe retries (180s timeout) & 1s delay.
-      5. Deliver ATM CCTV Notices with safe retries.
+      2. Deliver Combine Notice DOCX (if bank notices generated).
+      3. Deliver White Background Forensic Money Trail Flowchart Photo.
+      4. Deliver Individual Bank Notice PDFs (if bank notices generated) with safe retries & 1s delay.
+      5. Deliver ATM CCTV Notices (if ATM requested).
       6. Deliver Completion Card.
     """
     safe_ref = ref_str.replace('_', ' ')
@@ -971,74 +1204,80 @@ async def dispatch_case_files(
                 bot=bot,
                 chat_id=chat_id,
                 file_path=zip_bundle,
-                caption=f"📦 *सम्पूर्ण केस बंडल (All-in-One ZIP Archive)*\nसभी बैंक व ATM नोटिस, कंबाइंड DOCX, 3D चार्ट व केस डायरी - 1 क्लिक में डाउनलोड करें।",
+                caption=f"📦 *सम्पूर्ण केस बंडल (All-in-One ZIP Archive)*\nसभी बैंक व ATM नोटिस, कंबाइंड DOCX, व्हाइट फ्लोचार्ट व केस डायरी - 1 क्लिक में डाउनलोड करें।",
                 parse_mode=ParseMode.MARKDOWN
             )
             await asyncio.sleep(1)
 
-        # 2. DELIVER COMBINE NOTICE DOCX
-        combine_candidates = (
-            glob.glob(os.path.join(case_dir, "combine_notice", "*.docx")) or
-            glob.glob(os.path.join(case_dir, "Notice_DOCX_Files", "Combine_Notice*.docx"))
+        # 2. DELIVER COMBINE NOTICE DOCX (If bank notices enabled)
+        if notice_type in ["both", "bank"]:
+            combine_candidates = (
+                glob.glob(os.path.join(case_dir, "combine_notice", "*.docx")) or
+                glob.glob(os.path.join(case_dir, "Notice_DOCX_Files", "Combine_Notice*.docx"))
+            )
+            if combine_candidates:
+                combine_docx = combine_candidates[0]
+                await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+                await safe_send_document(
+                    bot=bot,
+                    chat_id=chat_id,
+                    file_path=combine_docx,
+                    caption=f"📄 *कंबाइंड बैंक नोटिस (Combine Notice #{notice_no})*\nसभी बैंकों हेतु एकीकृत मांग पत्र (केवल DOCX प्रारूप)",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                await asyncio.sleep(1)
+
+        # 3. DELIVER WHITE FORENSIC MONEY TRAIL FLOWCHART PHOTO
+        radar_imgs = (
+            glob.glob(os.path.join(case_dir, "forensic_money_trail_3d*.png")) or
+            glob.glob(os.path.join(case_dir, "forensic_money_trail_3d*.jpg"))
         )
-        if combine_candidates:
-            combine_docx = combine_candidates[0]
-            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
-            await safe_send_document(
-                bot=bot,
-                chat_id=chat_id,
-                file_path=combine_docx,
-                caption=f"📄 *कंबाइंड बैंक नोटिस (Combine Notice #{notice_no})*\nसभी बैंकों हेतु एकीकृत मांग पत्र (केवल DOCX प्रारूप)",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            await asyncio.sleep(1)
-
-        # 3. DELIVER 3D MONEY TRAIL FLOWCHART PHOTO
-        radar_imgs = glob.glob(os.path.join(case_dir, "forensic_money_trail_3d*.png"))
         if radar_imgs:
             await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
             await safe_send_photo(
                 bot=bot,
                 chat_id=chat_id,
                 photo_path=radar_imgs[0],
-                caption="📊 *फोरेंसिक मनी ट्रेल 3D विज़ुअल चार्ट (लेयर 1 से 5)*",
+                caption="📊 *फोरेंसिक मनी ट्रेल 3D फ्लोचार्ट (शुद्ध सफेद बैकग्राउंड व स्पष्ट ब्लैक टेक्स्ट)*",
                 parse_mode=ParseMode.MARKDOWN
             )
             await asyncio.sleep(1)
 
-        # 4. DELIVER INDIVIDUAL BANK NOTICE PDFS (With retries & non-fatal handling)
-        pdf_dir = os.path.join(case_dir, "Notice_PDF_Files")
-        if os.path.isdir(pdf_dir):
-            pdfs = sorted([os.path.join(pdf_dir, f) for f in os.listdir(pdf_dir) if f.endswith(".pdf")])
-            for idx, p in enumerate(pdfs, 1):
-                bname = os.path.basename(p)
-                await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
-                ok = await safe_send_document(
-                    bot=bot,
-                    chat_id=chat_id,
-                    file_path=p,
-                    caption=f"📑 [{idx}/{len(pdfs)}] {bname}"
-                )
-                if ok:
-                    sent_pdf_count += 1
-                await asyncio.sleep(1)
+        # 4. DELIVER INDIVIDUAL BANK NOTICE PDFS (If bank notices enabled)
+        if notice_type in ["both", "bank"]:
+            pdf_dir = os.path.join(case_dir, "Notice_PDF_Files")
+            if os.path.isdir(pdf_dir):
+                pdfs = sorted([os.path.join(pdf_dir, f) for f in os.listdir(pdf_dir) if f.endswith(".pdf")])
+                for idx, p in enumerate(pdfs, 1):
+                    bname = os.path.basename(p)
+                    await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+                    ok = await safe_send_document(
+                        bot=bot,
+                        chat_id=chat_id,
+                        file_path=p,
+                        caption=f"📑 [{idx}/{len(pdfs)}] {bname}"
+                    )
+                    if ok:
+                        sent_pdf_count += 1
+                    await asyncio.sleep(1)
 
-        # 5. DELIVER ATM CCTV NOTICES (DOCX)
-        docx_dir = os.path.join(case_dir, "Notice_DOCX_Files")
-        if os.path.isdir(docx_dir):
-            atm_notices = sorted(glob.glob(os.path.join(docx_dir, "Notice_CCTV_ATM*.docx")))
-            for idx, atm in enumerate(atm_notices, 1):
-                bname = os.path.basename(atm)
-                await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
-                ok = await safe_send_document(
-                    bot=bot,
-                    chat_id=chat_id,
-                    file_path=atm,
-                    caption=f"🏧 [{idx}/{len(atm_notices)}] CCTV नोटिस: {bname}"
-                )
-                if ok:
-                    sent_atm_count += 1
-                await asyncio.sleep(1)
+        # 5. DELIVER ATM CCTV NOTICES (If ATM requested)
+        if notice_type in ["both", "atm"]:
+            docx_dir = os.path.join(case_dir, "Notice_DOCX_Files")
+            if os.path.isdir(docx_dir):
+                atm_notices = sorted(glob.glob(os.path.join(docx_dir, "Notice_CCTV_ATM*.docx")))
+                for idx, atm in enumerate(atm_notices, 1):
+                    bname = os.path.basename(atm)
+                    await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+                    ok = await safe_send_document(
+                        bot=bot,
+                        chat_id=chat_id,
+                        file_path=atm,
+                        caption=f"🏧 [{idx}/{len(atm_notices)}] CCTV नोटिस: {bname}"
+                    )
+                    if ok:
+                        sent_atm_count += 1
+                    await asyncio.sleep(1)
 
         # 6. DELIVERY SUMMARY CARD
         email_str = "छोड़ा गया"
@@ -1057,7 +1296,7 @@ async def dispatch_case_files(
             f"• *ऑल-इन-वन बंडल*: {'✅ 1 ZIP प्रेषित' if zip_sent else '⚠️ ZIP तैयार'}\n"
             f"• *बैंक नोटिस (PDF)*: {sent_pdf_count} फाइल्स प्रेषित\n"
             f"• *ATM CCTV नोटिस*: {sent_atm_count} फाइल्स प्रेषित\n"
-            f"• *कंबाइंड नोटिस*: 1 DOCX प्रेषित\n"
+            f"• *फ्लोचार्ट*: 1 फोटो प्रेषित (Pure White Background)\n"
             f"• *ईमेल ऑटोमेशन*: {safe_email}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"✨ *नया केस शुरू करने के लिए कभी भी नई NCRP शिकायत PDF भेजें या /start लिखें।*\n"
@@ -1134,7 +1373,7 @@ def main():
     # Interactive Inline Buttons
     app.add_handler(CallbackQueryHandler(handle_callback_query))
 
-    # Text inputs (Replies for FIR no, Notice no, IO selection, Email, etc.)
+    # Text inputs (Replies for FIR no, FIR date, Notice date, Notice type, Layer range, Notice no, IO selection, Email, etc.)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
 
     # Start Polling

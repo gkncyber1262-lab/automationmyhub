@@ -2483,7 +2483,8 @@ class NCRPUnifiedAgent:
 
         output_pdf_dir: str = None,
 
-        single_bank_only: bool = False
+        single_bank_only: bool = False,
+        max_layer: int = 5
 
     ) -> List[str]:
 
@@ -2540,12 +2541,14 @@ class NCRPUnifiedAgent:
 
 
         df['Layer_Num'] = df['Layer'].apply(get_layer_num)
+        effective_max = max_layer if (max_layer and max_layer > 0) else 5
 
 
 
-        # STRICT PROTOCOL: Layer 1 to Layer 5 ONLY!
+        # PROTOCOL: Filter up to max_layer
+        effective_max = max_layer if (max_layer and max_layer > 0) else 5
 
-        df_excluded = df[df['Layer_Num'] > 5]
+        df_excluded = df[df['Layer_Num'] > effective_max]
 
         if not df_excluded.empty:
 
@@ -2555,7 +2558,7 @@ class NCRPUnifiedAgent:
 
 
 
-        df = df[df['Layer_Num'] <= 5]
+        df = df[df['Layer_Num'] <= effective_max]
 
 
 
@@ -3433,7 +3436,8 @@ class NCRPUnifiedAgent:
 
         notice_no: int = 5739,
 
-        notice_date_override: str = None
+        notice_date_override: str = None,
+        max_layer: int = 5
 
     ) -> Dict[str, str]:
 
@@ -3484,8 +3488,9 @@ class NCRPUnifiedAgent:
 
 
         df['Layer_Num'] = df['Layer'].apply(get_layer_num)
+        effective_max = max_layer if (max_layer and max_layer > 0) else 5
 
-        df = df[df['Layer_Num'] <= 5]
+        df = df[df['Layer_Num'] <= effective_max]
 
 
 
@@ -6078,7 +6083,9 @@ class NCRPUnifiedAgent:
 
         imei_list: Optional[List[str]] = None,
 
-        sign_mode: str = "unsigned"
+        sign_mode: str = "unsigned",
+        notice_type: str = "both",
+        max_layer: int = 5
 
     ) -> Dict[str, Any]:
 
@@ -6260,31 +6267,30 @@ class NCRPUnifiedAgent:
 
 
 
-        # STEP 3: Bank Statutory Notices (Layer 1 to 5 only)
-
+        # STEP 3: Bank Statutory Notices & ATM CCTV Notices
         notices_base = os.path.join(case_dir, f"Individual_Notices_{ack_no}")
-
         if all_steps or "bank_notices" in steps:
-
-            print("\n>>> [STEP 3/10] STATUTORY BANK NOTICE GENERATOR MODULE (SEC 94 BNSS - LAYER 1 TO 5)...")
-
+            print(f"\n>>> [STEP 3/10] STATUTORY BANK / ATM NOTICE MODULE (Type: {notice_type}, Max Layer: {max_layer})...")
             excel_path = os.path.join(case_dir, f"BankAction_CompleteTrail_{ack_no}.xlsx")
-
             if os.path.exists(excel_path):
+                gen_bank = str(notice_type).lower() in ["both", "bank"]
+                gen_atm = str(notice_type).lower() in ["both", "atm"]
 
-                self.generate_all_bank_notices(
-                    excel_path=excel_path,
-                    case_context=ctx,
-                    output_base_dir=notices_base,
-                    sign_mode=sign_mode,
-                    start_notice_no=start_notice_no,
-                    notice_date_override=notice_date_override,
-                    output_docx_dir=docx_notice_dir,
-                    output_pdf_dir=pdf_notice_dir
-                )
+                if gen_bank:
+                    self.generate_all_bank_notices(
+                        excel_path=excel_path,
+                        case_context=ctx,
+                        output_base_dir=notices_base,
+                        sign_mode=sign_mode,
+                        start_notice_no=start_notice_no,
+                        notice_date_override=notice_date_override,
+                        output_docx_dir=docx_notice_dir,
+                        output_pdf_dir=pdf_notice_dir,
+                        max_layer=max_layer
+                    )
 
                 # Generate dedicated CCTV Footage Requisition Notices for ATM transactions (one per ATM ID)
-                if ctx.get("atm_withdrawals_structured"):
+                if gen_atm and ctx.get("atm_withdrawals_structured"):
                     self.generate_cctv_atm_notice(
                         case_context=ctx,
                         output_base_dir=notices_base,
@@ -6296,19 +6302,19 @@ class NCRPUnifiedAgent:
                     )
 
                 # Generate Consolidated Combined Bank Notice (DOCX ONLY - NO PDF)
-                combine_dir = os.path.join(case_dir, "combine_notice")
-                os.makedirs(combine_dir, exist_ok=True)
-                comb_res = self.generate_combine_bank_notice(
-                    excel_path=excel_path,
-                    case_context=ctx,
-                    output_dir=combine_dir,
-                    notice_no=start_notice_no,
-                    notice_date_override=notice_date_override
-                )
-                if comb_res and "docx" in comb_res and os.path.exists(comb_res["docx"]):
-                    shutil.copy2(comb_res["docx"], os.path.join(docx_notice_dir, os.path.basename(comb_res["docx"])))
-
-
+                if gen_bank:
+                    combine_dir = os.path.join(case_dir, "combine_notice")
+                    os.makedirs(combine_dir, exist_ok=True)
+                    comb_res = self.generate_combine_bank_notice(
+                        excel_path=excel_path,
+                        case_context=ctx,
+                        output_dir=combine_dir,
+                        notice_no=start_notice_no,
+                        notice_date_override=notice_date_override,
+                        max_layer=max_layer
+                    )
+                    if comb_res and "docx" in comb_res and os.path.exists(comb_res["docx"]):
+                        shutil.copy2(comb_res["docx"], os.path.join(docx_notice_dir, os.path.basename(comb_res["docx"])))
 
         # STEP 4: Telecom CDR & SDR Requisition Letter
 
