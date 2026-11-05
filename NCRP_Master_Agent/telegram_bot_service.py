@@ -50,6 +50,7 @@ from telegram import (
     InputFile
 )
 from telegram.constants import ChatAction, ParseMode
+from telegram.request import HTTPXRequest
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -184,6 +185,76 @@ def create_case_zip_bundle(case_dir: str) -> Optional[str]:
     except Exception as e:
         print(f"[ZIP Warning] Could not create zip: {e}")
         return None
+
+
+async def safe_send_document(
+    bot,
+    chat_id: int,
+    file_path: str,
+    caption: str = "",
+    parse_mode = None,
+    retries: int = 3
+) -> bool:
+    """Sends document with automatic retries, extended timeouts (180s), and error resilience."""
+    if not file_path or not os.path.exists(file_path):
+        print(f"[Send Doc] File not found: {file_path}")
+        return False
+
+    for attempt in range(1, retries + 1):
+        try:
+            with open(file_path, "rb") as f:
+                await bot.send_document(
+                    chat_id=chat_id,
+                    document=f,
+                    caption=caption,
+                    parse_mode=parse_mode,
+                    read_timeout=180.0,
+                    write_timeout=180.0,
+                    connect_timeout=60.0
+                )
+            return True
+        except Exception as ex:
+            print(f"[Send Doc Retry {attempt}/{retries}] {os.path.basename(file_path)}: {ex}")
+            if attempt < retries:
+                await asyncio.sleep(2 * attempt)
+            else:
+                print(f"[Send Doc Failed] {file_path}: {ex}")
+                return False
+    return False
+
+
+async def safe_send_photo(
+    bot,
+    chat_id: int,
+    photo_path: str,
+    caption: str = "",
+    parse_mode = None,
+    retries: int = 3
+) -> bool:
+    """Sends photo with automatic retries and extended timeouts (180s)."""
+    if not photo_path or not os.path.exists(photo_path):
+        return False
+
+    for attempt in range(1, retries + 1):
+        try:
+            with open(photo_path, "rb") as f:
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=f,
+                    caption=caption,
+                    parse_mode=parse_mode,
+                    read_timeout=180.0,
+                    write_timeout=180.0,
+                    connect_timeout=60.0
+                )
+            return True
+        except Exception as ex:
+            print(f"[Send Photo Retry {attempt}/{retries}]: {ex}")
+            if attempt < retries:
+                await asyncio.sleep(2 * attempt)
+            else:
+                return False
+    return False
 
 
 # ========================================================================================
@@ -402,6 +473,38 @@ async def sample_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await process_received_pdf(sample_pdf, update.effective_message, chat_id)
 
 
+async def resend_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Resends all files from the latest generated case directly to Telegram."""
+    if not await check_access(update):
+        return
+    chat_id = update.effective_chat.id
+    all_cases = glob.glob(os.path.join(agent.output_dir, "Case_*")) + glob.glob(os.path.join(agent.output_dir, "FIR_*"))
+    if not all_cases:
+        msg = "⚠️ कोई प्रोसेस्ड केस उपलब्ध नहीं है। कृपया पहले अपनी PDF भेजें।"
+        if update.message:
+            await update.message.reply_text(msg)
+        elif update.callback_query:
+            await update.callback_query.message.reply_text(msg)
+        return
+
+    latest_case = max(all_cases, key=os.path.getmtime)
+    cname = os.path.basename(latest_case)
+    status_txt = f"📦 नवीनतम केस (`{cname}`) की सभी फाइल्स Telegram पर भेजी जा रही हैं..."
+    if update.message:
+        await update.message.reply_text(status_txt, parse_mode=ParseMode.MARKDOWN)
+    elif update.callback_query:
+        await update.callback_query.message.reply_text(status_txt, parse_mode=ParseMode.MARKDOWN)
+
+    await dispatch_case_files(
+        bot=context.bot,
+        chat_id=chat_id,
+        case_dir=latest_case,
+        notice_no=5744,
+        io_name="INVESTIGATING OFFICER",
+        ref_str=cname
+    )
+
+
 # ========================================================================================
 # DOCUMENT / PDF HANDLER
 # ========================================================================================
@@ -517,6 +620,10 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
     elif data == "act:reset":
         await reset_command(update, context)
+        return
+
+    elif data == "act:resend":
+        await resend_command(update, context)
         return
 
     # Step 1: IO Selection
@@ -818,7 +925,58 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
     bot = context.bot
 
     try:
-        # 1. Send Combine Notice DOCX
+        await dispatch_case_files(
+            bot=context.bot,
+            chat_id=chat_id,
+            case_dir=case_dir,
+            notice_no=notice_no,
+            io_name=io_name,
+            ref_str=ref_str,
+            email_summary=res.get("email_summary")
+        )
+    finally:
+        session["state"] = "idle"
+
+
+async def dispatch_case_files(
+    bot,
+    chat_id: int,
+    case_dir: str,
+    notice_no: int,
+    io_name: str,
+    ref_str: str,
+    email_summary: Optional[Dict[str, Any]] = None
+):
+    """
+    Delivers all generated notices and files to Telegram safely.
+    Strategy:
+      1. Deliver Complete ZIP Archive FIRST (guarantees officer has 100% of files in 1 tap!).
+      2. Deliver Combine Notice DOCX.
+      3. Deliver 3D Forensic Money Trail Photo.
+      4. Deliver Individual Bank Notice PDFs with safe retries (180s timeout) & 1s delay.
+      5. Deliver ATM CCTV Notices with safe retries.
+      6. Deliver Completion Card.
+    """
+    safe_ref = ref_str.replace('_', ' ')
+    sent_pdf_count = 0
+    sent_atm_count = 0
+
+    try:
+        # 1. DELIVER COMPLETE ZIP ARCHIVE FIRST (All files in 1 click!)
+        zip_bundle = create_case_zip_bundle(case_dir)
+        zip_sent = False
+        if zip_bundle and os.path.exists(zip_bundle):
+            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+            zip_sent = await safe_send_document(
+                bot=bot,
+                chat_id=chat_id,
+                file_path=zip_bundle,
+                caption=f"📦 *सम्पूर्ण केस बंडल (All-in-One ZIP Archive)*\nसभी बैंक व ATM नोटिस, कंबाइंड DOCX, 3D चार्ट व केस डायरी - 1 क्लिक में डाउनलोड करें।",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            await asyncio.sleep(1)
+
+        # 2. DELIVER COMBINE NOTICE DOCX
         combine_candidates = (
             glob.glob(os.path.join(case_dir, "combine_notice", "*.docx")) or
             glob.glob(os.path.join(case_dir, "Notice_DOCX_Files", "Combine_Notice*.docx"))
@@ -826,77 +984,63 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
         if combine_candidates:
             combine_docx = combine_candidates[0]
             await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
-            with open(combine_docx, "rb") as f:
-                await bot.send_document(
-                    chat_id=chat_id,
-                    document=f,
-                    caption=f"📄 *कंबाइंड बैंक नोटिस (Combine Notice #{notice_no})*\nसभी बैंकों हेतु एकीकृत मांग पत्र (केवल DOCX प्रारूप)",
-                    parse_mode=ParseMode.MARKDOWN
-                )
-            await asyncio.sleep(0.5)
+            await safe_send_document(
+                bot=bot,
+                chat_id=chat_id,
+                file_path=combine_docx,
+                caption=f"📄 *कंबाइंड बैंक नोटिस (Combine Notice #{notice_no})*\nसभी बैंकों हेतु एकीकृत मांग पत्र (केवल DOCX प्रारूप)",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            await asyncio.sleep(1)
 
-        # 2. Send 3D Money Trail Flowchart (as Photo)
+        # 3. DELIVER 3D MONEY TRAIL FLOWCHART PHOTO
         radar_imgs = glob.glob(os.path.join(case_dir, "forensic_money_trail_3d*.png"))
         if radar_imgs:
             await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
-            with open(radar_imgs[0], "rb") as f:
-                await bot.send_photo(
-                    chat_id=chat_id,
-                    photo=f,
-                    caption="📊 *फोरेंसिक मनी ट्रेल 3D विज़ुअल चार्ट (लेयर 1 से 5)*",
-                    parse_mode=ParseMode.MARKDOWN
-                )
-            await asyncio.sleep(0.5)
+            await safe_send_photo(
+                bot=bot,
+                chat_id=chat_id,
+                photo_path=radar_imgs[0],
+                caption="📊 *फोरेंसिक मनी ट्रेल 3D विज़ुअल चार्ट (लेयर 1 से 5)*",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            await asyncio.sleep(1)
 
-        # 3. Send ALL Individual Bank Notice PDFs (NO LIMIT)
+        # 4. DELIVER INDIVIDUAL BANK NOTICE PDFS (With retries & non-fatal handling)
         pdf_dir = os.path.join(case_dir, "Notice_PDF_Files")
-        sent_pdf_count = 0
         if os.path.isdir(pdf_dir):
             pdfs = sorted([os.path.join(pdf_dir, f) for f in os.listdir(pdf_dir) if f.endswith(".pdf")])
             for idx, p in enumerate(pdfs, 1):
                 bname = os.path.basename(p)
                 await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
-                with open(p, "rb") as f:
-                    await bot.send_document(
-                        chat_id=chat_id,
-                        document=f,
-                        caption=f"📑 [{idx}/{len(pdfs)}] {bname}"
-                    )
-                sent_pdf_count += 1
-                await asyncio.sleep(0.5)
+                ok = await safe_send_document(
+                    bot=bot,
+                    chat_id=chat_id,
+                    file_path=p,
+                    caption=f"📑 [{idx}/{len(pdfs)}] {bname}"
+                )
+                if ok:
+                    sent_pdf_count += 1
+                await asyncio.sleep(1)
 
-        # 4. Send ALL ATM CCTV Notices (DOCX)
+        # 5. DELIVER ATM CCTV NOTICES (DOCX)
         docx_dir = os.path.join(case_dir, "Notice_DOCX_Files")
-        sent_atm_count = 0
         if os.path.isdir(docx_dir):
             atm_notices = sorted(glob.glob(os.path.join(docx_dir, "Notice_CCTV_ATM*.docx")))
             for idx, atm in enumerate(atm_notices, 1):
                 bname = os.path.basename(atm)
                 await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
-                with open(atm, "rb") as f:
-                    await bot.send_document(
-                        chat_id=chat_id,
-                        document=f,
-                        caption=f"🏧 [{idx}/{len(atm_notices)}] CCTV नोटिस: {bname}"
-                    )
-                sent_atm_count += 1
-                await asyncio.sleep(0.5)
-
-        # 5. Create & Send Complete ZIP Bundle
-        zip_bundle = create_case_zip_bundle(case_dir)
-        if zip_bundle and os.path.exists(zip_bundle):
-            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
-            with open(zip_bundle, "rb") as f:
-                await bot.send_document(
+                ok = await safe_send_document(
+                    bot=bot,
                     chat_id=chat_id,
-                    document=f,
-                    caption=f"📦 *सम्पूर्ण केस बंडल (ZIP Archive)*\nसभी बैंक व ATM नोटिस, कंबाइंड DOCX, 3D चार्ट व केस डायरी एक साथ डाउनलोड करें।",
-                    parse_mode=ParseMode.MARKDOWN
+                    file_path=atm,
+                    caption=f"🏧 [{idx}/{len(atm_notices)}] CCTV नोटिस: {bname}"
                 )
-            await asyncio.sleep(0.5)
+                if ok:
+                    sent_atm_count += 1
+                await asyncio.sleep(1)
 
-        # 6. Delivery Summary & Next Actions Card
-        email_summary = res.get("email_summary")
+        # 6. DELIVERY SUMMARY CARD
         email_str = "छोड़ा गया"
         if email_summary:
             if email_summary.get("success"):
@@ -906,20 +1050,22 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
 
         safe_email = email_str.replace('_', ' ')
         summary_done = (
-            f"🎉 *टेलीग्राम डिलीवरी सफलतापूर्वक संपन्न!*\n"
+            f"🎉 *टेलीग्राम डिलीवरी संपन्न!*\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"• *केस संदर्भ*: {safe_ref}\n"
             f"• *जांच अधिकारी*: {io_name}\n"
+            f"• *ऑल-इन-वन बंडल*: {'✅ 1 ZIP प्रेषित' if zip_sent else '⚠️ ZIP तैयार'}\n"
             f"• *बैंक नोटिस (PDF)*: {sent_pdf_count} फाइल्स प्रेषित\n"
             f"• *ATM CCTV नोटिस*: {sent_atm_count} फाइल्स प्रेषित\n"
             f"• *कंबाइंड नोटिस*: 1 DOCX प्रेषित\n"
-            f"• *ऑल-इन-वन बंडल*: 1 ZIP प्रेषित\n"
             f"• *ईमेल ऑटोमेशन*: {safe_email}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"✨ *नया केस शुरू करने के लिए कभी भी नई NCRP शिकायत PDF भेजें या /start लिखें।*"
+            f"✨ *नया केस शुरू करने के लिए कभी भी नई NCRP शिकायत PDF भेजें या /start लिखें।*\n"
+            f"*(यदि कभी कोई फाइल दोबारा चाहिए तो /resend लिखें)*"
         )
         keyboard = [
-            [InlineKeyboardButton("📁 एक और केस शुरू करें (/start)", callback_data="act:reset")]
+            [InlineKeyboardButton("📁 एक और केस शुरू करें (/start)", callback_data="act:reset")],
+            [InlineKeyboardButton("🔄 इस केस की फाइल्स फिर भेजें (/resend)", callback_data="act:resend")]
         ]
         await bot.send_message(
             chat_id=chat_id,
@@ -931,10 +1077,7 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
     except Exception as e:
         import traceback
         traceback.print_exc()
-        await bot.send_message(chat_id=chat_id, text=f"⚠️ डिलीवरी के दौरान कुछ फाइल्स भेजने में समस्या: {e}")
-
-    finally:
-        session["state"] = "idle"
+        await bot.send_message(chat_id=chat_id, text=f"⚠️ डिलीवरी के दौरान कुछ फाइल्स भेजने में समस्या: {e}\n(आप /resend लिखकर पुनः प्रयास कर सकते हैं)")
 
 
 # ========================================================================================
@@ -967,13 +1110,22 @@ def main():
     print("[*] Using Long Polling (No Webhook/Tunnel required).")
     print("[*] Bot is listening for incoming NCRP Complaint PDFs...\n")
 
-    app = ApplicationBuilder().token(token).build()
+    request_config = HTTPXRequest(
+        connection_pool_size=16,
+        connect_timeout=60.0,
+        read_timeout=180.0,
+        write_timeout=180.0,
+        media_write_timeout=180.0,
+        pool_timeout=60.0
+    )
+    app = ApplicationBuilder().token(token).request(request_config).build()
 
     # Commands
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CommandHandler("sample", sample_command))
+    app.add_handler(CommandHandler("resend", resend_command))
     app.add_handler(CommandHandler("reset", reset_command))
 
     # Documents (PDFs)
