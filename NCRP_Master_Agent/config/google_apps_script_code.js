@@ -64,24 +64,28 @@ function doPost(e) {
       sheet.setFrozenRows(1);
     }
 
-    // Get existing keys to prevent duplicates
-    var existingKeys = {};
+    // Map existing row indices by key to update in-place with latest IO details
+    var keyToRowIdx = {};
     var lastRow = sheet.getLastRow();
     if (lastRow > 1) {
       var data = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
       for (var i = 0; i < data.length; i++) {
         var k = String(data[i][0]).trim() + "_" + String(data[i][4]).trim() + "_" + String(data[i][6]).trim() + "_" + String(data[i][7]).trim();
-        existingKeys[k] = true;
+        keyToRowIdx[k] = i + 2;
       }
     }
 
     var addedCount = 0;
+    var updatedCount = 0;
     for (var j = 0; j < rows.length; j++) {
       var r = rows[j];
       var rowKey = String(r[0] || "").trim() + "_" + String(r[4] || "").trim() + "_" + String(r[6] || "").trim() + "_" + String(r[7] || "").trim();
-      if (!existingKeys[rowKey]) {
+      if (keyToRowIdx[rowKey]) {
+        sheet.getRange(keyToRowIdx[rowKey], 1, 1, r.length).setValues([r]);
+        updatedCount++;
+      } else {
         sheet.appendRow(r);
-        existingKeys[rowKey] = true;
+        keyToRowIdx[rowKey] = sheet.getLastRow();
         addedCount++;
       }
     }

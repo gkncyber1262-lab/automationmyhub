@@ -132,13 +132,22 @@ def extract_mule_records(case_context: Dict[str, Any], base_dir: str = "") -> Li
     total_defrauded = str(fin.get("alleged_amount", comp.get("defrauded_amount", "0.00"))).strip()
     total_lien = str(fin.get("total_lien_amount", "0.00")).strip()
 
-    # Investigating Officer Info
+    # Investigating Officer Info - strictly as provided by user
     io_name = str(case_meta.get("io_name", "Investigating Officer")).strip()
     io_rank = str(case_meta.get("io_rank", "")).strip()
     io_mob = str(case_meta.get("io_mobile", "")).strip()
     io_belt = str(case_meta.get("io_belt_no", "")).strip()
-    io_parts = [p for p in [io_rank, io_name, f"({io_belt or io_mob})" if (io_belt or io_mob) else ""] if p]
-    io_str = " ".join(io_parts)
+
+    rank_prefixes = ('SI', 'WSI', 'W/SI', 'HC', 'ASI', 'INSP', 'INSPECTOR', 'SUB INSPECTOR', 'HEAD CONSTABLE', 'CT', 'CONSTABLE')
+    if any(io_name.upper().startswith(p + ' ') or io_name.upper() == p for p in rank_prefixes):
+        full_io = io_name
+    elif io_rank:
+        full_io = f"{io_rank} {io_name}".strip()
+    else:
+        full_io = io_name
+
+    contact = io_belt or io_mob
+    io_str = f"{full_io} ({contact})" if contact else full_io
 
     # Brief Facts synthesis
     cat = str(comp.get("category", "")).strip()
@@ -294,15 +303,15 @@ def sync_to_local_excel(records: List[Dict[str, Any]], excel_path: str = DEFAULT
         ws.row_dimensions[1].height = 32
         ws.freeze_panes = "A2"
 
-    # Identify existing entries to prevent exact duplicate rows
-    existing_keys = set()
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    # Map existing row indices by key to update them in-place with latest IO and details
+    existing_key_to_row = {}
+    for r_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         if row and any(row):
             ack = str(row[0] or "").strip()
             layer = str(row[4] or "").strip()
             acc = str(row[6] or "").strip()
             ifsc = str(row[7] or "").strip()
-            existing_keys.add((ack, layer, acc, ifsc))
+            existing_key_to_row[(ack, layer, acc, ifsc)] = r_idx
 
     regular_font = Font(name="Calibri", size=10)
     regular_align = Alignment(vertical="center", wrap_text=True)
@@ -315,29 +324,41 @@ def sync_to_local_excel(records: List[Dict[str, Any]], excel_path: str = DEFAULT
     )
 
     new_appended = 0
+    updated_count = 0
     for rec in records:
         key = (rec["ack_or_fir_no"], rec["layer"], rec["suspect_account_no"], rec["ifsc_code"])
-        if key in existing_keys:
-            continue
-
         row_data = format_record_for_row(rec)
-        ws.append(row_data)
-        current_row = ws.max_row
-        ws.row_dimensions[current_row].height = 24
 
-        for col_idx in range(1, len(row_data) + 1):
-            cell = ws.cell(row=current_row, column=col_idx)
-            cell.font = regular_font
-            cell.border = thin_border
-            if col_idx in [10, 12, 13]:  # Amounts
-                cell.alignment = money_align
-            elif col_idx in [1, 4, 5, 7, 8, 15]:  # Codes, Mobiles, Dates
-                cell.alignment = Alignment(horizontal="center", vertical="center")
-            else:
-                cell.alignment = regular_align
-
-        existing_keys.add(key)
-        new_appended += 1
+        if key in existing_key_to_row:
+            target_row = existing_key_to_row[key]
+            for col_idx in range(1, len(row_data) + 1):
+                cell = ws.cell(row=target_row, column=col_idx)
+                cell.value = row_data[col_idx - 1]
+                cell.font = regular_font
+                cell.border = thin_border
+                if col_idx in [10, 12, 13]:
+                    cell.alignment = money_align
+                elif col_idx in [1, 4, 5, 7, 8, 15]:
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                else:
+                    cell.alignment = regular_align
+            updated_count += 1
+        else:
+            ws.append(row_data)
+            current_row = ws.max_row
+            ws.row_dimensions[current_row].height = 24
+            for col_idx in range(1, len(row_data) + 1):
+                cell = ws.cell(row=current_row, column=col_idx)
+                cell.font = regular_font
+                cell.border = thin_border
+                if col_idx in [10, 12, 13]:
+                    cell.alignment = money_align
+                elif col_idx in [1, 4, 5, 7, 8, 15]:
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                else:
+                    cell.alignment = regular_align
+            existing_key_to_row[key] = current_row
+            new_appended += 1
 
     # Auto-adjust column widths
     for col in ws.columns:

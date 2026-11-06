@@ -3257,7 +3257,7 @@ class NCRPUnifiedAgent:
         date_parts = re.split(r'[/.-]', comp_date)
         d_day, d_month, d_year = (date_parts[0], date_parts[1], date_parts[2]) if len(date_parts) == 3 else ("20", "10", "2026")
 
-        io_name = case_meta.get("io_name", "SI ARVIND KUMAR")
+        io_name = case_meta.get("io_name") or "Investigating Officer"
         io_rank = case_meta.get("io_rank", "SUB INSPECTOR")
         io_mobile = str(case_meta.get("io_mobile", "8750871987")).replace("+91", "").replace("-", "").strip()
         io_email = case_meta.get("station_email", "shocyber.north@delhipolice.gov.in")
@@ -4438,7 +4438,7 @@ class NCRPUnifiedAgent:
             p_st = c_left.paragraphs[0]
             p_st.add_run().add_picture(self.stamp_seal, width=Inches(1.2))
 
-        io_name = c_meta.get("io_name", "SI ARVIND KUMAR")
+        io_name = c_meta.get("io_name") or "Investigating Officer"
         io_rank = c_meta.get("io_rank", "SUB INSPECTOR")
         sig_p = self.resolve_io_signature(io_name, "signed")
         p_sig = c_right.paragraphs[0]
@@ -5791,7 +5791,7 @@ class NCRPUnifiedAgent:
 
         held = case_context.get("financial_summary", {}).get("total_lien_amount", "0.00")
 
-        io_name = case_meta.get("io_name", "SI RENU")
+        io_name = case_meta.get("io_name") or "Investigating Officer"
 
         io_rank = case_meta.get("io_rank", "SUB INSPECTOR")
 
@@ -6800,27 +6800,20 @@ class NCRPUnifiedAgent:
                 gen_bank = str(notice_type).lower() in ["both", "bank"]
                 gen_atm = str(notice_type).lower() in ["both", "atm"]
 
-                # Clean stale notices from opposite type if re-running in existing case directory
-                if gen_bank and not gen_atm:
-                    for d in [docx_notice_dir, pdf_notice_dir, notices_base]:
-                        if os.path.exists(d):
-                            for root, _, files in os.walk(d):
-                                for f in files:
-                                    if any(k in f.lower() for k in ["atm", "cctv"]):
-                                        try:
-                                            os.remove(os.path.join(root, f))
-                                        except Exception:
-                                            pass
-                elif gen_atm and not gen_bank:
-                    for d in [docx_notice_dir, pdf_notice_dir, notices_base]:
-                        if os.path.exists(d):
-                            for root, _, files in os.walk(d):
-                                for f in files:
-                                    if f.startswith("Notice_0") or "combine" in f.lower():
-                                        try:
-                                            os.remove(os.path.join(root, f))
-                                        except Exception:
-                                            pass
+                # Thorough clean: remove all prior notices so only current IO's notices exist
+                for d in [docx_notice_dir, pdf_notice_dir]:
+                    if os.path.exists(d):
+                        for f in os.listdir(d):
+                            if f.endswith(('.docx', '.pdf')):
+                                try:
+                                    os.remove(os.path.join(d, f))
+                                except Exception:
+                                    pass
+                if os.path.exists(notices_base):
+                    shutil.rmtree(notices_base, ignore_errors=True)
+                combine_clean = os.path.join(case_dir, "combine_notice")
+                if os.path.exists(combine_clean):
+                    shutil.rmtree(combine_clean, ignore_errors=True)
 
                 if gen_bank:
                     self.generate_all_bank_notices(

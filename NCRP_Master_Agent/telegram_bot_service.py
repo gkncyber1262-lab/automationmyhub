@@ -355,19 +355,25 @@ def execute_pipeline_sync(
         print(f"[COM Init Warning]: {e}")
 
     try:
-        # Resolve IO details
-        io_mobile = "8750871987"
-        io_rank = "SUB INSPECTOR"
+        # Resolve IO details strictly as passed
+        io_mobile = ""
+        io_rank = "INVESTIGATING OFFICER"
         if "rajendra" in io_name.lower():
             io_rank = "HEAD CONSTABLE"
             io_mobile = "9818036472"
         elif "renu" in io_name.lower():
             io_rank = "SUB INSPECTOR"
             io_mobile = "9899959840"
+        elif "arvind" in io_name.lower():
+            io_rank = "SUB INSPECTOR"
+            io_mobile = "8750871987"
         else:
             m_rank = re.match(r'^(SI|W/SI|SUB INSPECTOR|HC|HEAD CONSTABLE|ASI|ASST SUB INSPECTOR|INSP|INSPECTOR|CT|CONSTABLE)\s+(.*)', io_name, re.I)
             if m_rank:
                 io_rank = m_rank.group(1).upper()
+            else:
+                io_rank = "IO"
+            io_mobile = ""
 
         io_override = {
             "name": io_name,
@@ -1484,8 +1490,8 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 io_rank = m_rank.group(1).upper()
                 io_name = raw_io.upper()
             else:
-                io_rank = "SUB INSPECTOR"
-                io_name = f"SI {raw_io.upper()}"
+                io_rank = "IO"
+                io_name = raw_io.upper()
 
         session["io_name"] = io_name
         session["io_rank"] = io_rank
