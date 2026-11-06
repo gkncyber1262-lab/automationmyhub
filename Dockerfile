@@ -18,9 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY . .
 
-# Set default port
-ENV PORT=5005
-EXPOSE 5005
+# Set default port for Koyeb / Cloud
+ENV PORT=8000
+EXPOSE 8000
 
-# Start WhatsApp webhook service
-CMD ["python", "NCRP_Master_Agent/whatsapp_webhook_service.py"]
+# Start 24/7 Unified Cloud Service Runner (FastAPI Health Check + Telegram Bot)
+CMD ["python", "run_cloud_service.py"]

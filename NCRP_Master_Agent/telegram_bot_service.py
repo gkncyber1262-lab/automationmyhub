@@ -92,6 +92,19 @@ def load_telegram_credentials() -> Dict[str, Any]:
     if env_token:
         cfg["bot_token"] = env_token
 
+    env_admin = os.environ.get('TELEGRAM_ADMIN_CHAT_ID')
+    if env_admin:
+        try:
+            a_id = int(env_admin)
+            admins = cfg.setdefault('admin_chat_ids', [])
+            if a_id not in admins:
+                admins.append(a_id)
+            alloweds = cfg.setdefault('allowed_chat_ids', [])
+            if a_id not in alloweds:
+                alloweds.append(a_id)
+        except Exception:
+            pass
+
     return cfg
 
 
@@ -120,6 +133,85 @@ def parse_date_input(val: str) -> str:
     return today_str
 
 
+def parse_io_details(raw_input: str) -> Dict[str, str]:
+    """
+    Parses Investigating Officer input accurately:
+    Preserves exact custom name, extracts mobile number if given,
+    and accurately identifies rank without overriding custom names.
+    """
+    s = (raw_input or "").strip()
+    if not s:
+        return {
+            "name": "SI ARVIND KUMAR",
+            "rank": "SUB INSPECTOR",
+            "mobile": "8750871987"
+        }
+
+    # Extract mobile number if included (10 digits)
+    io_mobile = ""
+    m_mob = re.search(r'\b([6-9]\d{9})\b', s)
+    if m_mob:
+        io_mobile = m_mob.group(1)
+        s = re.sub(r'[\(\[\{]?\b' + io_mobile + r'\b[\)\]\}]?', '', s).strip()
+        s = re.sub(r'(?i)\b(mob|mobile|phone|ph|no|contact)\b[:.-]?', '', s).strip()
+
+    s_clean = re.sub(r'\s+', ' ', s).strip()
+    s_upper = s_clean.upper()
+
+    # Pre-configured known officers (strict exact/shorthand matches)
+    if s_upper in ["1", "ARVIND", "SI ARVIND", "SI ARVIND KUMAR"]:
+        return {
+            "name": "SI ARVIND KUMAR",
+            "rank": "SUB INSPECTOR",
+            "mobile": "8750871987"
+        }
+    if s_upper in ["2", "RENU", "SI RENU", "W/SI RENU", "WSI RENU"]:
+        return {
+            "name": "SI RENU",
+            "rank": "SUB INSPECTOR",
+            "mobile": "9899959840"
+        }
+    if s_upper in ["3", "RAJENDRA", "HC RAJENDRA", "HC RAJENDRA KUMAR"]:
+        return {
+            "name": "HC RAJENDRA",
+            "rank": "HEAD CONSTABLE",
+            "mobile": "9818036472"
+        }
+
+    # Extract rank if prefixed
+    rank_map = {
+        "W/SI": "SUB INSPECTOR",
+        "WSI": "SUB INSPECTOR",
+        "SI": "SUB INSPECTOR",
+        "SUB INSPECTOR": "SUB INSPECTOR",
+        "HC": "HEAD CONSTABLE",
+        "HEAD CONSTABLE": "HEAD CONSTABLE",
+        "ASI": "ASSISTANT SUB INSPECTOR",
+        "ASST SUB INSPECTOR": "ASSISTANT SUB INSPECTOR",
+        "INSP": "INSPECTOR",
+        "INSPECTOR": "INSPECTOR",
+        "SHO": "SHO / INSPECTOR",
+        "CT": "CONSTABLE",
+        "CONSTABLE": "CONSTABLE"
+    }
+
+    m_rank = re.match(r'^(W/SI|WSI|SUB INSPECTOR|SI|HEAD CONSTABLE|HC|ASST SUB INSPECTOR|ASI|INSPECTOR|INSP|SHO|CONSTABLE|CT)\b\s*(.*)', s_clean, re.I)
+    if m_rank:
+        r_key = m_rank.group(1).upper()
+        io_rank = rank_map.get(r_key, r_key)
+        # Keep full name as entered in upper case e.g. "SI RAMESH"
+        io_name = s_upper
+    else:
+        io_rank = "INVESTIGATING OFFICER"
+        io_name = s_upper
+
+    return {
+        "name": io_name,
+        "rank": io_rank,
+        "mobile": io_mobile
+    }
+
+
 def get_user_session(user_id: int) -> Dict[str, Any]:
     """Gets or initializes session state for a user."""
     today_str = datetime.datetime.now().strftime("%d/%m/%Y")
@@ -129,6 +221,8 @@ def get_user_session(user_id: int) -> Dict[str, Any]:
             "pdf_path": None,
             "ack_no": None,
             "io_name": "SI ARVIND KUMAR",
+            "io_rank": "SUB INSPECTOR",
+            "io_mobile": "8750871987",
             "fir_details": {"is_fir": False, "fir_no": "", "fir_date": today_str},
             "fir_date": today_str,
             "notice_date": today_str,
@@ -345,7 +439,9 @@ def execute_pipeline_sync(
     notice_date: Optional[str] = None,
     notice_type: str = "both",
     max_layer: int = 5,
-    email_settings: Optional[Dict[str, Any]] = None
+    email_settings: Optional[Dict[str, Any]] = None,
+    io_rank: Optional[str] = None,
+    io_mobile: Optional[str] = None
 ) -> Dict[str, Any]:
     """Synchronous pipeline runner wrapped with COM apartment initialization."""
     try:
@@ -355,31 +451,18 @@ def execute_pipeline_sync(
         print(f"[COM Init Warning]: {e}")
 
     try:
-        # Resolve IO details strictly as passed
-        io_mobile = ""
-        io_rank = "INVESTIGATING OFFICER"
-        if "rajendra" in io_name.lower():
-            io_rank = "HEAD CONSTABLE"
-            io_mobile = "9818036472"
-        elif "renu" in io_name.lower():
-            io_rank = "SUB INSPECTOR"
-            io_mobile = "9899959840"
-        elif "arvind" in io_name.lower():
-            io_rank = "SUB INSPECTOR"
-            io_mobile = "8750871987"
-        else:
-            m_rank = re.match(r'^(SI|W/SI|SUB INSPECTOR|HC|HEAD CONSTABLE|ASI|ASST SUB INSPECTOR|INSP|INSPECTOR|CT|CONSTABLE)\s+(.*)', io_name, re.I)
-            if m_rank:
-                io_rank = m_rank.group(1).upper()
-            else:
-                io_rank = "IO"
-            io_mobile = ""
+        # Strictly preserve the passed IO details, fallback to parse_io_details only if missing
+        if not io_rank or not io_mobile:
+            parsed = parse_io_details(io_name)
+            io_name = io_name or parsed["name"]
+            io_rank = io_rank or parsed["rank"]
+            io_mobile = io_mobile or parsed["mobile"]
 
         io_override = {
             "name": io_name,
-            "rank": io_rank,
-            "belt_no": io_mobile,
-            "mobile": io_mobile
+            "rank": io_rank or "INVESTIGATING OFFICER",
+            "belt_no": io_mobile or "",
+            "mobile": io_mobile or ""
         }
 
         active_fir = fir_details if (fir_details and fir_details.get("is_fir")) else {"is_fir": False}
@@ -1074,6 +1157,9 @@ async def process_received_pdf(pdf_path: str, message, chat_id: int):
     session = get_user_session(chat_id)
     session["pdf_path"] = pdf_path
     session["state"] = "awaiting_io"
+    session["io_name"] = None
+    session["io_rank"] = None
+    session["io_mobile"] = None
 
     prog_msg = await message.reply_text("⏳ *NCRP शिकायत का विश्लेषण व मनी ट्रेल एक्सट्रैक्शन जारी है...*", parse_mode=ParseMode.MARKDOWN)
 
@@ -1291,24 +1377,26 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         choice = data.split(":")[1]
         if choice == "custom":
             session["state"] = "awaiting_custom_io"
-            await query.edit_message_text("📝 *कृपया जांच अधिकारी (IO) का नाम व पद टाइप करके भेजें:*\n\nउदा. `SI RAMESH KUMAR` या `HC DINESH`", parse_mode=ParseMode.MARKDOWN)
+            await query.edit_message_text(
+                "📝 *कृपया जांच अधिकारी (IO) का नाम टाइप करके भेजें:*\n\n"
+                "उदा: `SI VIKAS SHARMA` या `HC DINESH` (मोबाइल नंबर भी लिख सकते हैं)",
+                parse_mode=ParseMode.MARKDOWN
+            )
             return
         elif choice == "renu":
-            io_name = "SI RENU"
-            io_rank = "SUB INSPECTOR"
+            parsed = parse_io_details("2")
         elif choice == "rajendra":
-            io_name = "HC RAJENDRA"
-            io_rank = "HEAD CONSTABLE"
+            parsed = parse_io_details("3")
         else:
-            io_name = "SI ARVIND KUMAR"
-            io_rank = "SUB INSPECTOR"
+            parsed = parse_io_details("1")
 
-        session["io_name"] = io_name
-        session["io_rank"] = io_rank
+        session["io_name"] = parsed["name"]
+        session["io_rank"] = parsed["rank"]
+        session["io_mobile"] = parsed["mobile"]
         session["state"] = "awaiting_fir_choice"
 
         prompt_fir = (
-            f"✅ चयनित जांच अधिकारी: *{io_name}*\n\n"
+            f"✅ चयनित जांच अधिकारी: *{parsed['name']}* ({parsed['rank']})\n\n"
             f"📌 *[सवाल 2] केस संदर्भ (Case Reference):*\n"
             f"क्या इस मामले में FIR दर्ज हो चुकी है?"
         )
@@ -1474,31 +1562,14 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # State: Awaiting IO by typing or custom IO name
     if current_state in ["awaiting_io", "awaiting_custom_io"]:
-        raw_io = text.strip()
-        if raw_io == "1":
-            io_name = "SI ARVIND KUMAR"
-            io_rank = "SUB INSPECTOR"
-        elif raw_io == "2" or "renu" in raw_io.lower():
-            io_name = "SI RENU"
-            io_rank = "SUB INSPECTOR"
-        elif raw_io == "3" or "rajendra" in raw_io.lower():
-            io_name = "HC RAJENDRA"
-            io_rank = "HEAD CONSTABLE"
-        else:
-            m_rank = re.match(r'^(SI|W/SI|SUB INSPECTOR|HC|HEAD CONSTABLE|ASI|ASST SUB INSPECTOR|INSP|INSPECTOR|CT|CONSTABLE)\s+(.*)', raw_io, re.I)
-            if m_rank:
-                io_rank = m_rank.group(1).upper()
-                io_name = raw_io.upper()
-            else:
-                io_rank = "IO"
-                io_name = raw_io.upper()
-
-        session["io_name"] = io_name
-        session["io_rank"] = io_rank
+        parsed = parse_io_details(text)
+        session["io_name"] = parsed["name"]
+        session["io_rank"] = parsed["rank"]
+        session["io_mobile"] = parsed["mobile"]
         session["state"] = "awaiting_fir_choice"
 
         prompt_fir = (
-            f"✅ चयनित जांच अधिकारी: *{io_name}*\n\n"
+            f"✅ चयनित जांच अधिकारी: *{parsed['name']}* ({parsed['rank']})\n\n"
             f"📌 *[सवाल 2] क्या FIR दर्ज हो चुकी है?*\n"
             f"*[1]* केवल NCRP शिकायत है [Default]\n"
             f"*[2]* FIR दर्ज हो चुकी है\n\n"
@@ -1632,7 +1703,9 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
         sample_pdf = os.path.join(agent.input_dir, "AcknowledgementNo_30810260096039.pdf")
         pdf_path = sample_pdf
 
-    io_name = session.get("io_name", "SI ARVIND KUMAR")
+    io_name = session.get("io_name") or "SI ARVIND KUMAR"
+    io_rank = session.get("io_rank") or "SUB INSPECTOR"
+    io_mobile = session.get("io_mobile") or "8750871987"
     notice_no = session.get("notice_no", 5744)
     fir_details = session.get("fir_details", {"is_fir": False})
     notice_date = session.get("notice_date", datetime.datetime.now().strftime("%d/%m/%Y"))
@@ -1674,7 +1747,9 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
         notice_date,
         notice_type,
         max_layer,
-        email_settings
+        email_settings,
+        io_rank,
+        io_mobile
     )
 
     if not res.get("success"):

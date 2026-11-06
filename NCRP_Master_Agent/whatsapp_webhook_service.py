@@ -199,6 +199,85 @@ def create_case_zip_bundle(case_dir: str) -> Optional[str]:
         return None
 
 
+def parse_io_details(raw_input: str) -> Dict[str, str]:
+    """
+    Parses Investigating Officer input accurately:
+    Preserves exact custom name, extracts mobile number if given,
+    and accurately identifies rank without overriding custom names.
+    """
+    s = (raw_input or "").strip()
+    if not s:
+        return {
+            "name": "SI ARVIND KUMAR",
+            "rank": "SUB INSPECTOR",
+            "mobile": "8750871987"
+        }
+
+    # Extract mobile number if included (10 digits)
+    io_mobile = ""
+    m_mob = re.search(r'\b([6-9]\d{9})\b', s)
+    if m_mob:
+        io_mobile = m_mob.group(1)
+        s = re.sub(r'[\(\[\{]?\b' + io_mobile + r'\b[\)\]\}]?', '', s).strip()
+        s = re.sub(r'(?i)\b(mob|mobile|phone|ph|no|contact)\b[:.-]?', '', s).strip()
+
+    s_clean = re.sub(r'\s+', ' ', s).strip()
+    s_upper = s_clean.upper()
+
+    # Pre-configured known officers (strict exact/shorthand matches)
+    if s_upper in ["1", "ARVIND", "SI ARVIND", "SI ARVIND KUMAR"]:
+        return {
+            "name": "SI ARVIND KUMAR",
+            "rank": "SUB INSPECTOR",
+            "mobile": "8750871987"
+        }
+    if s_upper in ["2", "RENU", "SI RENU", "W/SI RENU", "WSI RENU"]:
+        return {
+            "name": "SI RENU",
+            "rank": "SUB INSPECTOR",
+            "mobile": "9899959840"
+        }
+    if s_upper in ["3", "RAJENDRA", "HC RAJENDRA", "HC RAJENDRA KUMAR"]:
+        return {
+            "name": "HC RAJENDRA",
+            "rank": "HEAD CONSTABLE",
+            "mobile": "9818036472"
+        }
+
+    # Extract rank if prefixed
+    rank_map = {
+        "W/SI": "SUB INSPECTOR",
+        "WSI": "SUB INSPECTOR",
+        "SI": "SUB INSPECTOR",
+        "SUB INSPECTOR": "SUB INSPECTOR",
+        "HC": "HEAD CONSTABLE",
+        "HEAD CONSTABLE": "HEAD CONSTABLE",
+        "ASI": "ASSISTANT SUB INSPECTOR",
+        "ASST SUB INSPECTOR": "ASSISTANT SUB INSPECTOR",
+        "INSP": "INSPECTOR",
+        "INSPECTOR": "INSPECTOR",
+        "SHO": "SHO / INSPECTOR",
+        "CT": "CONSTABLE",
+        "CONSTABLE": "CONSTABLE"
+    }
+
+    m_rank = re.match(r'^(W/SI|WSI|SUB INSPECTOR|SI|HEAD CONSTABLE|HC|ASST SUB INSPECTOR|ASI|INSPECTOR|INSP|SHO|CONSTABLE|CT)\b\s*(.*)', s_clean, re.I)
+    if m_rank:
+        r_key = m_rank.group(1).upper()
+        io_rank = rank_map.get(r_key, r_key)
+        # Keep full name as entered in upper case e.g. "SI RAMESH"
+        io_name = s_upper
+    else:
+        io_rank = "INVESTIGATING OFFICER"
+        io_name = s_upper
+
+    return {
+        "name": io_name,
+        "rank": io_rank,
+        "mobile": io_mobile
+    }
+
+
 def process_case_background(
     sender: str,
     pdf_path: str,
@@ -218,18 +297,14 @@ def process_case_background(
     try:
         send_whatsapp_text(sender, "⏳ जांच प्रगति पर है... बैंक नोटिस (DOCX व PDF), कंबाइंड DOCX, 3D फ्लोचार्ट और केस डायरी तैयार की जा रही है। कृपया 20-30 सेकंड प्रतीक्षा करें...")
 
-        # Resolve IO details
-        io_mobile = "8750871987"
-        io_rank = "SUB INSPECTOR"
-        if "rajendra" in io_name.lower():
-            io_rank = "HEAD CONSTABLE"
-            io_mobile = "9818036472"
-
+        # Resolve IO details strictly as passed
+        parsed_io = parse_io_details(io_name)
+        final_io_name = io_name if io_name and io_name not in ["1", "2", "3"] else parsed_io["name"]
         io_override = {
-            "name": io_name,
-            "rank": io_rank,
-            "belt_no": io_mobile,
-            "mobile": io_mobile
+            "name": final_io_name,
+            "rank": parsed_io["rank"],
+            "belt_no": parsed_io["mobile"],
+            "mobile": parsed_io["mobile"]
         }
 
         # Resolve FIR Details
@@ -499,28 +574,27 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
             f"• *बैंक लेयर्स*: 1 से 5 (CCTV व चेक पूर्णतः बहिष्कृत)\n"
             f"━━━━━━━━━━━━━━━━━━\n\n"
             f"📌 *[सवाल 1/4] कृपया जांच अधिकारी (IO) का चयन करें:*\n"
-            f"*[1]* SI ARVIND KUMAR (हस्ताक्षर: arvind.png) [Default]\n"
-            f"*[2]* SI RENU (हस्ताक्षर: renu sign.png)\n"
-            f"*[3]* HC RAJENDRA (हस्ताक्षर: rajendra sign.png)\n\n"
-            f"👉 उत्तर में केवल *1*, *2* या *3* लिखकर भेजें:"
+            f"*[1]* SI ARVIND KUMAR [Default]\n"
+            f"*[2]* SI RENU\n"
+            f"*[3]* HC RAJENDRA\n"
+            f"*[4]* अन्य IO का नाम लिखकर भेजें (उदा. SI DINESH)\n\n"
+            f"👉 1, 2, 3 या सीधा IO का नाम लिखकर भेजें:"
         )
         send_whatsapp_text(sender, summary_card)
         return {"status": "pdf_received_awaiting_io"}
 
     # 3. Handle IO Selection (STRICT: only when state is awaiting_io or 2)
     if current_state in ["awaiting_io", 2, "2"]:
-        io_choice = text.strip()
-        io_name = "SI ARVIND KUMAR"
-        if io_choice == "2" or "renu" in io_choice.lower():
-            io_name = "SI RENU"
-        elif io_choice == "3" or "rajendra" in io_choice.lower():
-            io_name = "HC RAJENDRA"
+        parsed_io = parse_io_details(text.strip())
+        io_name = parsed_io["name"]
 
         session["io_name"] = io_name
+        session["io_rank"] = parsed_io["rank"]
+        session["io_mobile"] = parsed_io["mobile"]
         session["state"] = "awaiting_fir_choice"
 
         prompt_fir = (
-            f"✅ चयनित जांच अधिकारी: *{io_name}*\n\n"
+            f"✅ चयनित जांच अधिकारी: *{io_name}* ({parsed_io['rank']})\n\n"
             f"📌 *[सवाल 2/4] केस संदर्भ (Case Reference):*\n"
             f"क्या इस मामले में FIR दर्ज हो चुकी है?\n"
             f"*[1]* नहीं - केवल NCRP शिकायत है (Sec 94 BNSS Notice) [Default]\n"

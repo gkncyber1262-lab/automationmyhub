@@ -2207,7 +2207,7 @@ class NCRPUnifiedAgent:
 
         for p in doc.paragraphs:
 
-            if "Rajendra Kumar" in p.text:
+            if any(k.lower() in p.text.lower() for k in ["Rajendra Kumar", "Arvind Kumar", "SI ARVIND KUMAR", "SI RENU", "HC RAJENDRA", "Investigating Officer"]):
 
                 p.text = io_name
 
