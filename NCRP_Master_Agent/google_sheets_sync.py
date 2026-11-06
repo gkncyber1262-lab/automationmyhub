@@ -497,9 +497,19 @@ def sync_case_to_database_and_sheets(case_context: Dict[str, Any], base_dir: str
     if not records:
         return {"status": "empty", "message": "No suspect transfers found in case context", "count": 0}
 
-    # 1. Update local Master Excel
+    # 1. Update local Master Excel (with lock resilience)
     excel_path = os.path.join(base_dir, "output", "Mule_Account_Master_Database.xlsx")
-    sync_to_local_excel(records, excel_path)
+    try:
+        sync_to_local_excel(records, excel_path)
+    except PermissionError:
+        print(f"  [WARN] Master Excel file is open in Microsoft Excel. Saving to Live fallback mirror.")
+        fallback_path = os.path.join(base_dir, "output", "Mule_Account_Master_Database_Live.xlsx")
+        try:
+            sync_to_local_excel(records, fallback_path)
+        except Exception:
+            pass
+    except Exception as ee:
+        print(f"  [WARN] Local Excel sync warning: {ee}")
 
     # 2. Update Cloud Google Sheet
     cfg_path = os.path.join(base_dir, "config", "google_sheets_config.json")

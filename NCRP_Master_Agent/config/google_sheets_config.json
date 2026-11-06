@@ -3,7 +3,7 @@
   "sheet_tab_name": "Mule_Accounts",
   "local_excel_path": "output/Mule_Account_Master_Database.xlsx",
   "google_service_account_file": "config/google_service_account.json",
-  "apps_script_webhook_url": "",
+  "apps_script_webhook_url": "https://script.google.com/macros/s/AKfycbxh9D0inOqYq3b7GAD0vmJyfIhNgSRuj4vfadFGbhVvdbBbVCCSgvE2qt85DieVvKU/exec",
   "google_sheet_id_or_url": "",
   "auto_sync_enabled": true
 }
