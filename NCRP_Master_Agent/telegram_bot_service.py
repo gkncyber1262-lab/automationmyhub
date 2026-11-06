@@ -849,6 +849,110 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(status_text, parse_mode=ParseMode.MARKDOWN)
 
 
+async def sheet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles /sheet command to display Mule Account Database status and Google Sheet URL."""
+    if not await check_access(update):
+        return
+    
+    from google_sheets_sync import get_sheets_config
+    cfg = get_sheets_config()
+    
+    excel_path = os.path.join(BASE_DIR, "output", "Mule_Account_Master_Database.xlsx")
+    total_records = 0
+    if os.path.exists(excel_path):
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(excel_path, read_only=True)
+            ws = wb.active
+            total_records = max(0, ws.max_row - 1)
+        except Exception:
+            pass
+
+    webhook_url = cfg.get("apps_script_webhook_url", "").strip()
+    sheet_url = cfg.get("google_sheet_id_or_url", "").strip()
+    sa_path = os.path.join(BASE_DIR, cfg.get("google_service_account_file", "config/google_service_account.json"))
+    has_sa = os.path.exists(sa_path)
+
+    sync_status = "⚠️ लोकल मास्टर एक्सेल में सक्रिय (Google Sheet लिंक पेंडिंग)"
+    if webhook_url:
+        sync_status = "✅ Google Apps Script Webhook से लाइव कनेक्टेड"
+    elif has_sa:
+        sync_status = "✅ Google Service Account से कनेक्टेड"
+
+    txt = (
+        "📊 *म्यूल अकाउंट मास्टर डेटाबेस (Mule Account Database)*\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔹 *डेटाबेस स्थिति*: {sync_status}\n"
+        f"🔹 *कुल दर्ज सस्पेक्ट खाते*: `{total_records}` खाते\n"
+        f"🔹 *लोकल मास्टर एक्सेल*: `output/Mule_Account_Master_Database.xlsx`\n"
+        f"🔹 *स्प्रेडशीट नाम*: `{cfg.get('spreadsheet_name')}`\n"
+    )
+    if webhook_url:
+        txt += f"🔹 *Apps Script URL*: `{webhook_url[:45]}...`\n"
+    if sheet_url:
+        txt += f"🔹 *Google Sheet*: [यहाँ क्लिक करें]({sheet_url})\n"
+
+    txt += (
+        "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "📌 *कमांड विकल्प:*\n"
+        "• `/muleexcel` — वर्तमान मास्टर एक्सेल फाइल डाउनलोड करें\n"
+        "• `/setsheeturl <URL>` — Apps Script Webhook URL सेट करें\n"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("📥 मास्टर एक्सेल डाउनलोड करें (/muleexcel)", callback_data="act:get_mule_excel")],
+        [InlineKeyboardButton("🔄 रिफ्रेश स्थिति (/sheet)", callback_data="act:refresh_sheet")]
+    ]
+    if update.message:
+        await update.message.reply_text(txt, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+    elif update.callback_query:
+        await update.callback_query.message.reply_text(txt, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def muleexcel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sends current Mule_Account_Master_Database.xlsx to user."""
+    if not await check_access(update):
+        return
+    chat_id = update.effective_chat.id
+    excel_path = os.path.join(BASE_DIR, "output", "Mule_Account_Master_Database.xlsx")
+    if not os.path.exists(excel_path):
+        await update.message.reply_text("⚠️ मास्टर एक्सेल डेटाबेस अभी नहीं बना है। पहले कोई NCRP कंप्लेंट PDF प्रोसेस करें।")
+        return
+
+    await update.message.reply_chat_action(ChatAction.UPLOAD_DOCUMENT)
+    await safe_send_document(
+        bot=context.bot,
+        chat_id=chat_id,
+        file_path=excel_path,
+        caption="📊 *म्यूल अकाउंट मास्टर डेटाबेस (Mule Account Master Database)*\nसभी लेयर्स के सस्पेक्ट खातों का सेंट्रलाइज्ड रिकॉर्ड।",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+
+async def setsheeturl_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sets Google Apps Script Webhook URL: /setsheeturl <url>"""
+    if not await check_access(update):
+        return
+    chat_id = update.effective_chat.id
+    if not is_admin(chat_id):
+        await update.message.reply_text("⛔ केवल एडमिन ही Google Sheet URL कॉन्फ़िगर कर सकते हैं।")
+        return
+
+    args = context.args
+    if not args:
+        await update.message.reply_text("⚠️ कृपया Webhook URL भी दें:\nउदाहरण: `/setsheeturl https://script.google.com/macros/s/.../exec`", parse_mode=ParseMode.MARKDOWN)
+        return
+
+    new_url = args[0].strip()
+    from google_sheets_sync import get_sheets_config, DEFAULT_CONFIG_PATH
+    cfg = get_sheets_config()
+    cfg["apps_script_webhook_url"] = new_url
+    with open(DEFAULT_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+    await update.message.reply_text(f"✅ *Google Apps Script Webhook URL सफलतापूर्वक सेट हो गया!*\n`{new_url}`\nअब प्रत्येक केस का डेटा सीधे इस Google Sheet में लाइव अपडेट होगा।", parse_mode=ParseMode.MARKDOWN)
+
+
 async def sample_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Processes existing sample NCRP complaint for testing."""
     if not await check_access(update):
@@ -991,6 +1095,24 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     data = query.data
     chat_id = update.effective_chat.id
     session = get_user_session(chat_id)
+
+    if data == "act:get_mule_excel":
+        excel_path = os.path.join(BASE_DIR, "output", "Mule_Account_Master_Database.xlsx")
+        if os.path.exists(excel_path):
+            await safe_send_document(
+                bot=query.bot,
+                chat_id=chat_id,
+                file_path=excel_path,
+                caption="📊 *म्यूल अकाउंट मास्टर डेटाबेस (Mule Account Master Database)*",
+                parse_mode=ParseMode.MARKDOWN
+            )
+        else:
+            await query.message.reply_text("⚠️ मास्टर एक्सेल फाइल अभी मौजूद नहीं है।")
+        return
+
+    if data == "act:refresh_sheet":
+        await sheet_command(update, context)
+        return
 
     # Admin & User Access Callbacks
     if data.startswith("req_access:"):
@@ -1788,6 +1910,7 @@ async def dispatch_case_files(
         )
         keyboard = [
             [InlineKeyboardButton("📁 एक और केस शुरू करें (/start)", callback_data="act:reset")],
+            [InlineKeyboardButton("📊 मास्टर एक्सेल डाउनलोड (/muleexcel)", callback_data="act:get_mule_excel")],
             [InlineKeyboardButton("🔄 इस केस की फाइल्स फिर भेजें (/resend)", callback_data="act:resend")]
         ]
         await bot.send_message(
@@ -1855,6 +1978,9 @@ def main():
     app.add_handler(CommandHandler("removeuser", removeuser_command))
     app.add_handler(CommandHandler("users", listusers_command))
     app.add_handler(CommandHandler("listusers", listusers_command))
+    app.add_handler(CommandHandler("sheet", sheet_command))
+    app.add_handler(CommandHandler("muleexcel", muleexcel_command))
+    app.add_handler(CommandHandler("setsheeturl", setsheeturl_command))
 
     # Documents (PDFs)
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))

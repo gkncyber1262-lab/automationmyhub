@@ -685,6 +685,45 @@ class NCRPUnifiedAgent:
 
             alleged_amount = m_amt.group(1).strip() if m_amt else "0.00"
 
+            # Complainant Detailed Address & Crime Info Extraction
+            def _clean_str(v):
+                return re.sub(r'\s+', ' ', v or '').strip()
+
+            m_street = re.search(r'Street\s*Name\s*[:\-]?\s*([^\n\r]+)', p1_text, re.I)
+            street = _clean_str(m_street.group(1)) if m_street else ''
+
+            m_house = re.search(r'House\s*No\.?\s*[:\-]?\s*([^\n\r]+)', p1_text, re.I)
+            house = _clean_str(m_house.group(1)) if m_house else ''
+
+            m_colony = re.search(r'Colony\s*[:\-]?\s*([^\n\r]+)', p1_text, re.I)
+            colony = _clean_str(m_colony.group(1)) if m_colony else ''
+
+            m_town = re.search(r'Village/\s*Town\s*[:\-]?\s*([^\n\r]+)', p1_text, re.I)
+            town = _clean_str(m_town.group(1)) if m_town else ''
+
+            m_pin = re.search(r'Pincode\s*[:\-]?\s*(\d{6})', p1_text, re.I)
+            pincode = _clean_str(m_pin.group(1)) if m_pin else ''
+
+            m_dist = re.search(r'District\s*[:\-]?\s*([^\n\r]+)', p1_text, re.I)
+            district = _clean_str(m_dist.group(1)) if m_dist else ''
+
+            m_state = re.search(r'State\s*[:\-]?\s*([^\n\r]+)', p1_text, re.I)
+            state = _clean_str(m_state.group(1)) if m_state else ''
+
+            addr_parts = [p for p in [house, street, colony, town, district, state] if p and p.lower() not in ['null', 'none', '-']]
+            full_address = ', '.join(addr_parts)
+            if pincode:
+                full_address += f' - {pincode}'
+
+            m_cat = re.search(r'Category\s*of\s*Complaint\s*[:\-]?\s*([^\n\r]+)', p1_text, re.I)
+            cat = _clean_str(m_cat.group(1)) if m_cat else ''
+
+            m_subcat = re.search(r'Sub\s*Category\s*of\s*Complaint\s*[:\-]?\s*([^\n\r]+)', p1_text, re.I)
+            subcat = _clean_str(m_subcat.group(1)) if m_subcat else ''
+
+            m_add = re.search(r'Complaint\s*Additional\s*Info\s*[:\-]?\s*([^\n\r]+)', p1_text, re.I)
+            add_info = _clean_str(m_add.group(1)) if m_add else ''
+
 
 
             # Parse tables across all pages
@@ -911,7 +950,29 @@ class NCRPUnifiedAgent:
 
                 "victim_bank": victim_bank,
 
-                "defrauded_amount": alleged_amount
+                "defrauded_amount": alleged_amount,
+
+                "address": full_address,
+
+                "street": street,
+
+                "house": house,
+
+                "colony": colony,
+
+                "town": town,
+
+                "district": district,
+
+                "state": state,
+
+                "pincode": pincode,
+
+                "category": cat,
+
+                "sub_category": subcat,
+
+                "additional_info": add_info
 
             },
 
@@ -6959,6 +7020,15 @@ class NCRPUnifiedAgent:
         print(f"• 3D Flowcharts      : PNG/JPG Ultra-HD + Interactive HTML Visualizer")
 
         print("=" * 90 + "\n")
+
+        # STEP 10: Auto-Sync Mule Accounts to Centralized Google Sheet & Master Excel Database
+        try:
+            from google_sheets_sync import sync_case_to_database_and_sheets
+            sync_res = sync_case_to_database_and_sheets(ctx, base_dir=self.base_dir)
+            ctx["sheets_sync"] = sync_res
+            print(f"  [OK] Centralized Mule Account Database Synced: {sync_res.get('count', 0)} suspect accounts recorded.")
+        except Exception as se:
+            print(f"  [WARN] Mule Account Database Sync Warning: {se}")
 
         ctx["case_dir"] = case_dir
         ctx["acknowledgement_no"] = ack_no

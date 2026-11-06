@@ -1,0 +1,9 @@
+{
+  "spreadsheet_name": "म्यूल अकाउंट डेटाबेस - Mule Account Master Database",
+  "sheet_tab_name": "Mule_Accounts",
+  "local_excel_path": "output/Mule_Account_Master_Database.xlsx",
+  "google_service_account_file": "config/google_service_account.json",
+  "apps_script_webhook_url": "",
+  "google_sheet_id_or_url": "",
+  "auto_sync_enabled": true
+}
