@@ -158,8 +158,26 @@ def reset_user_session(user_id: int):
     }
 
 
+def save_telegram_credentials(cfg: dict):
+    """Persists config safely to telegram_credentials.json."""
+    os.makedirs(os.path.dirname(TG_CONFIG_FILE), exist_ok=True)
+    with open(TG_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+
+def is_admin(chat_id: int) -> bool:
+    """Checks if a chat_id has administrative rights."""
+    cfg = load_telegram_credentials()
+    admins = cfg.get("admin_chat_ids", [])
+    if not admins:
+        admins = [8160205906]
+    return str(chat_id).strip() in {str(a).strip() for a in admins}
+
+
 def is_authorized(chat_id: int) -> bool:
     """Checks if a chat_id is allowed to interact with the bot."""
+    if is_admin(chat_id):
+        return True
     cfg = load_telegram_credentials()
     allowed = cfg.get("allowed_chat_ids", [])
     if not allowed:
@@ -168,8 +186,39 @@ def is_authorized(chat_id: int) -> bool:
     return str(chat_id).strip() in allowed_str_set
 
 
+def add_allowed_chat_id(new_id: int) -> bool:
+    """Adds a new chat_id to allowed list in config."""
+    cfg = load_telegram_credentials()
+    allowed = cfg.get("allowed_chat_ids", [])
+    target = int(str(new_id).strip())
+    existing = [int(str(x).strip()) for x in allowed if str(x).strip().isdigit()]
+    if target not in existing:
+        existing.append(target)
+        cfg["allowed_chat_ids"] = existing
+        save_telegram_credentials(cfg)
+        return True
+    return False
+
+
+def remove_allowed_chat_id(target_id: int) -> bool:
+    """Removes a chat_id from allowed list in config."""
+    cfg = load_telegram_credentials()
+    allowed = cfg.get("allowed_chat_ids", [])
+    target_str = str(target_id).strip()
+    new_allowed = [x for x in allowed if str(x).strip() != target_str]
+    if len(new_allowed) != len(allowed):
+        cfg["allowed_chat_ids"] = new_allowed
+        save_telegram_credentials(cfg)
+        return True
+    return False
+
+
 async def check_access(update: Update) -> bool:
     """Verifies user authorization before processing any command, document or query."""
+    # Allow request access callback through unconditionally
+    if update.callback_query and update.callback_query.data and update.callback_query.data.startswith("req_access:"):
+        return True
+
     chat = update.effective_chat
     if not chat:
         return False
@@ -182,13 +231,16 @@ async def check_access(update: Update) -> bool:
             f"नमस्ते {user_name}, यह आधिकारिक PDF TO BANK NOTICE FOR CYBER INVESTIGATION बॉट है।\n\n"
             f"• *आपकी Chat ID*: `{chat_id}`\n\n"
             f"⚠️ यह बॉट केवल अधिकृत जांच अधिकारियों हेतु सीमित है।\n"
-            f"पहुंच प्राप्त करने हेतु अपनी Chat ID को `config/telegram_credentials.json` में `allowed_chat_ids` सूची में जोड़ें:\n"
-            f'```json\n"allowed_chat_ids": [{chat_id}]\n```'
+            f"यदि आप जांच अधिकारी हैं, तो कृपया नीचे दिए गए बटन पर क्लिक करके एडमिन से पहुंच की अनुमति मांगें:"
         )
+        keyboard = [
+            [InlineKeyboardButton("📩 एडमिन से एक्सेस की अनुमति मांगें (Request Access)", callback_data=f"req_access:{chat_id}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         if update.message:
-            await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
         elif update.callback_query:
-            await update.callback_query.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+            await update.callback_query.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
         print(f"[AUTH DENIED] Unauthorized access attempt from Chat ID: {chat_id}")
         return False
     return True
@@ -576,6 +628,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("ℹ️ सहायता व निर्देश (/help)", callback_data="act:help")],
         [InlineKeyboardButton("🔄 सेशन रीसेट करें (/reset)", callback_data="act:reset")]
     ]
+    if is_admin(chat_id):
+        keyboard.append([InlineKeyboardButton("👥 यूजर मैनेजमेंट (User Management)", callback_data="admin:menu")])
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(welcome_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
@@ -623,6 +677,160 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif update.callback_query:
         await update.callback_query.message.reply_text(msg)
 
+
+
+# ========================================================================================
+# USER MANAGEMENT & ADMIN COMMANDS
+# ========================================================================================
+async def show_admin_dashboard(target_msg, chat_id: int):
+    """Displays the Admin User Management Dashboard."""
+    cfg = load_telegram_credentials()
+    allowed = cfg.get("allowed_chat_ids", [])
+    admins = cfg.get("admin_chat_ids", [8160205906])
+
+    text = (
+        f"👥 *यूजर मैनेजमेंट डैशबोर्ड (User Management)*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• *कुल अधिकृत यूज़र्स*: {len(allowed)}\n"
+        f"• *सुपर एडमिन Chat ID*: `{admins[0] if admins else chat_id}`\n\n"
+        f"यहाँ से आप नए यूज़र्स को बॉट उपयोग की अनुमति दे सकते हैं अथवा हटा सकते हैं:\n\n"
+        f"👉 `/adduser <chat_id>` - नया यूजर जोड़ें\n"
+        f"👉 `/removeuser <chat_id>` - यूजर हटाएं\n"
+        f"👉 `/users` - सभी अधिकृत यूज़र्स की सूची देखें\n"
+    )
+    keyboard = [
+        [InlineKeyboardButton("➕ नया यूजर जोड़ें (Add User)", callback_data="admin:add_user")],
+        [InlineKeyboardButton("📋 अधिकृत यूज़र्स देखें (List Users)", callback_data="admin:list_users")],
+        [InlineKeyboardButton("➖ यूजर हटाएं (Remove User)", callback_data="admin:remove_menu")],
+        [InlineKeyboardButton("🔙 मुख्य मेनू (Main Menu)", callback_data="act:reset")]
+    ]
+    if hasattr(target_msg, "edit_text"):
+        try:
+            await target_msg.edit_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+            return
+        except Exception:
+            pass
+    await target_msg.reply_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles /admin command."""
+    chat_id = update.effective_chat.id
+    if not is_admin(chat_id):
+        await update.message.reply_text("⛔ यह कमांड केवल बॉट एडमिनिस्ट्रेटर हेतु उपलब्ध है।")
+        return
+    await show_admin_dashboard(update.message, chat_id)
+
+
+async def adduser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command to authorize a new user: /adduser <chat_id>"""
+    chat_id = update.effective_chat.id
+    if not is_admin(chat_id):
+        await update.message.reply_text("⛔ यह कमांड केवल बॉट एडमिन हेतु उपलब्ध है।")
+        return
+
+    args = context.args
+    if not args:
+        session = get_user_session(chat_id)
+        session["state"] = "awaiting_new_user_id"
+        await update.message.reply_text(
+            "📝 *कृपया जिस यूजर को जोड़ना है उसकी Telegram Chat ID भेजें:*\n\n"
+            "उदा: `987654321`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+
+    raw_id = args[0].strip()
+    m = re.search(r'(\d{6,15})', raw_id)
+    if not m:
+        await update.message.reply_text("⚠️ कृपया एक वैध अंकीय Chat ID दर्ज करें (उदा. `/adduser 987654321`)।")
+        return
+
+    target_id = int(m.group(1))
+    added = add_allowed_chat_id(target_id)
+    if added:
+        await update.message.reply_text(
+            f"✅ *यूजर अधिकृत कर दिया गया है!*\n"
+            f"• *Chat ID*: `{target_id}`\n\n"
+            f"अब यह यूजर बॉट पर NCRP शिकायत PDF भेजकर सभी नोटिस तैयार कर सकता है।",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text="🎉 *बधाई हो!* एडमिन द्वारा आपकी Chat ID अधिकृत कर दी गई है।\n"
+                     "शुरू करने के लिए /start भेजें या सीधे अपनी NCRP शिकायत की PDF अपलोड करें!",
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception:
+            pass
+    else:
+        await update.message.reply_text(f"ℹ️ Chat ID `{target_id}` पहले से ही अधिकृत सूची में मौजूद है।")
+
+
+async def removeuser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command to revoke access: /removeuser <chat_id>"""
+    chat_id = update.effective_chat.id
+    if not is_admin(chat_id):
+        await update.message.reply_text("⛔ यह कमांड केवल बॉट एडमिन हेतु उपलब्ध है।")
+        return
+
+    args = context.args
+    if not args:
+        await update.message.reply_text("⚠️ उपयोग: `/removeuser <chat_id>`\nउदा: `/removeuser 987654321`", parse_mode=ParseMode.MARKDOWN)
+        return
+
+    raw_id = args[0].strip()
+    m = re.search(r'(\d{6,15})', raw_id)
+    if not m:
+        await update.message.reply_text("⚠️ कृपया वैध अंकीय Chat ID दर्ज करें।")
+        return
+
+    target_id = int(m.group(1))
+    if target_id == 8160205906 or is_admin(target_id):
+        await update.message.reply_text("⚠️ सुपर एडमिन को हटाया नहीं जा सकता।")
+        return
+
+    removed = remove_allowed_chat_id(target_id)
+    if removed:
+        await update.message.reply_text(f"✅ Chat ID `{target_id}` की पहुंच सफलतापूर्वक निरस्त (Revoked) कर दी गई है।", parse_mode=ParseMode.MARKDOWN)
+    else:
+        await update.message.reply_text(f"ℹ️ Chat ID `{target_id}` अधिकृत सूची में नहीं मिली।")
+
+
+async def listusers_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command to list all authorized users: /users"""
+    chat_id = update.effective_chat.id
+    if not is_admin(chat_id):
+        await update.message.reply_text("⛔ यह कमांड केवल बॉट एडमिन हेतु उपलब्ध है।")
+        return
+
+    cfg = load_telegram_credentials()
+    allowed = cfg.get("allowed_chat_ids", [])
+    admins = {str(a).strip() for a in cfg.get("admin_chat_ids", [8160205906])}
+
+    if not allowed:
+        await update.message.reply_text("ℹ️ वर्तमान में कोई अलग यूजर आईडी नहीं है (ओपन एक्सेस)।")
+        return
+
+    rows = []
+    for idx, uid in enumerate(allowed, 1):
+        s_uid = str(uid).strip()
+        role = "👑 सुपर एडमिन" if s_uid in admins else "👮‍♂️ अधिकृत यूजर"
+        rows.append(f"*{idx}.* `{s_uid}` - {role}")
+
+    msg = (
+        f"📋 *अधिकृत यूज़र्स की सूची (Authorized Users)*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+        "\n".join(rows) +
+        f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• *कुल संख्या*: {len(allowed)}\n\n"
+        f"किसी यूजर को हटाने हेतु: `/removeuser <chat_id>`"
+    )
+    if update.message:
+        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+    elif update.callback_query:
+        await update.callback_query.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles /status command."""
@@ -783,6 +991,125 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     data = query.data
     chat_id = update.effective_chat.id
     session = get_user_session(chat_id)
+
+    # Admin & User Access Callbacks
+    if data.startswith("req_access:"):
+        req_chat_id = int(data.split(":")[1])
+        u_name = query.from_user.full_name or "जांच अधिकारी"
+        u_user = f"@{query.from_user.username}" if query.from_user.username else "कोई यूजरनेम नहीं"
+        await query.edit_message_text(
+            "⏳ *आपका पहुंच अनुरोध एडमिन को प्रेषित कर दिया गया है!*\n\n"
+            "जैसे ही एडमिन द्वारा स्वीकृति प्राप्त होगी, आपको स्वतः सूचित कर दिया जाएगा।",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        cfg = load_telegram_credentials()
+        admins = cfg.get("admin_chat_ids", [8160205906])
+        admin_req_text = (
+            f"🔔 *नए यूजर द्वारा एक्सेस का अनुरोध (Access Request)*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"• *नाम*: {u_name}\n"
+            f"• *यूजरनेम*: {u_user}\n"
+            f"• *Chat ID*: `{req_chat_id}`\n\n"
+            f"क्या आप इस यूजर को बॉट उपयोग की अनुमति देना चाहते हैं?"
+        )
+        admin_kb = [
+            [
+                InlineKeyboardButton("✅ अनुमति दें (Approve)", callback_data=f"admin_appr:{req_chat_id}"),
+                InlineKeyboardButton("❌ अस्वीकार करें (Reject)", callback_data=f"admin_rejc:{req_chat_id}")
+            ]
+        ]
+        for a_id in admins:
+            try:
+                await context.bot.send_message(
+                    chat_id=int(a_id),
+                    text=admin_req_text,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=InlineKeyboardMarkup(admin_kb)
+                )
+            except Exception as notify_err:
+                print(f"[Admin Notify Error]: {notify_err}")
+        return
+
+    elif data.startswith("admin_appr:"):
+        target_id = int(data.split(":")[1])
+        add_allowed_chat_id(target_id)
+        await query.edit_message_text(f"✅ *Chat ID `{target_id}` को सफलतापूर्वक अधिकृत कर दिया गया है!*", parse_mode=ParseMode.MARKDOWN)
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text="🎉 *बधाई हो!* एडमिन द्वारा आपकी Chat ID अधिकृत कर दी गई है।\n\n"
+                     "शुरू करने के लिए /start भेजें या सीधे अपनी NCRP शिकायत की PDF भेजें!",
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception:
+            pass
+        return
+
+    elif data.startswith("admin_rejc:"):
+        target_id = int(data.split(":")[1])
+        await query.edit_message_text(f"❌ *Chat ID `{target_id}` का अनुरोध अस्वीकार कर दिया गया।*", parse_mode=ParseMode.MARKDOWN)
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text="🚫 क्षमा करें, आपका अनुरोध एडमिन द्वारा अस्वीकार कर दिया गया है।",
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception:
+            pass
+        return
+
+    elif data == "admin:menu":
+        if not is_admin(chat_id):
+            await query.answer("एडमिन अधिकार आवश्यक हैं", show_alert=True)
+            return
+        await show_admin_dashboard(query.message, chat_id)
+        return
+
+    elif data == "admin:add_user":
+        if not is_admin(chat_id):
+            await query.answer("एडमिन अधिकार आवश्यक हैं", show_alert=True)
+            return
+        session["state"] = "awaiting_new_user_id"
+        await query.message.reply_text(
+            "📝 *कृपया जिस यूजर को जोड़ना है उसकी Telegram Chat ID टाइप करके भेजें:*\n\n"
+            "उदा: `987654321`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+
+    elif data == "admin:list_users":
+        if not is_admin(chat_id):
+            await query.answer("एडमिन अधिकार आवश्यक हैं", show_alert=True)
+            return
+        await listusers_command(update, context)
+        return
+
+    elif data == "admin:remove_menu":
+        if not is_admin(chat_id):
+            await query.answer("एडमिन अधिकार आवश्यक हैं", show_alert=True)
+            return
+        cfg = load_telegram_credentials()
+        allowed = cfg.get("allowed_chat_ids", [])
+        admins = {str(a).strip() for a in cfg.get("admin_chat_ids", [8160205906])}
+        removable = [u for u in allowed if str(u).strip() not in admins]
+        if not removable:
+            await query.message.reply_text("ℹ️ हटाने योग्य कोई अन्य यूजर उपलब्ध नहीं है।")
+            return
+        kb = []
+        for u in removable:
+            kb.append([InlineKeyboardButton(f"❌ Chat ID {u} हटाएं", callback_data=f"admin_rm:{u}")])
+        kb.append([InlineKeyboardButton("🔙 वापस", callback_data="admin:menu")])
+        await query.message.reply_text("🗑️ *किस यूजर की पहुंच हटाना चाहते हैं?*", parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(kb))
+        return
+
+    elif data.startswith("admin_rm:"):
+        if not is_admin(chat_id):
+            await query.answer("एडमिन अधिकार आवश्यक हैं", show_alert=True)
+            return
+        target_id = int(data.split(":")[1])
+        remove_allowed_chat_id(target_id)
+        await query.edit_message_text(f"✅ *Chat ID `{target_id}` को अधिकृत सूची से हटा दिया गया है।*", parse_mode=ParseMode.MARKDOWN)
+        return
 
     # Actions from menu
     if data == "act:load_sample":
@@ -956,6 +1283,39 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Quick global commands by text
     if text.lower() in ["hi", "hello", "start", "shuru", "reset"]:
         await start_command(update, context)
+        return
+
+    # State: Awaiting new user ID for authorization
+    if current_state == "awaiting_new_user_id":
+        if not is_admin(chat_id):
+            session["state"] = "idle"
+            await message.reply_text("⛔ एडमिन अधिकार आवश्यक हैं।")
+            return
+        m = re.search(r'(\d{6,15})', text)
+        if m:
+            new_id = int(m.group(1))
+            session["state"] = "idle"
+            added = add_allowed_chat_id(new_id)
+            if added:
+                await message.reply_text(
+                    f"✅ *सफलतापूर्वक अधिकृत (Authorized)!*\n\n"
+                    f"• *Chat ID*: `{new_id}`\n\n"
+                    f"यह यूजर अब बॉट पर NCRP शिकायत PDF भेजकर सभी नोटिस बना सकता है।",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                try:
+                    await context.bot.send_message(
+                        chat_id=new_id,
+                        text="🎉 *बधाई हो!* एडमिन द्वारा आपकी Chat ID अधिकृत कर दी गई है।\n\n"
+                             "शुरू करने के लिए /start भेजें या सीधे अपनी NCRP शिकायत की PDF भेजें!",
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                except Exception:
+                    pass
+            else:
+                await message.reply_text(f"ℹ️ Chat ID `{new_id}` पहले से ही अधिकृत सूची में मौजूद है।", parse_mode=ParseMode.MARKDOWN)
+        else:
+            await message.reply_text("⚠️ कृपया एक वैध अंकीय Chat ID दर्ज करें (उदा. `987654321`)।")
         return
 
     # State: Awaiting IO by typing or custom IO name
@@ -1490,6 +1850,11 @@ def main():
     app.add_handler(CommandHandler("sample", sample_command))
     app.add_handler(CommandHandler("resend", resend_command))
     app.add_handler(CommandHandler("reset", reset_command))
+    app.add_handler(CommandHandler("admin", admin_command))
+    app.add_handler(CommandHandler("adduser", adduser_command))
+    app.add_handler(CommandHandler("removeuser", removeuser_command))
+    app.add_handler(CommandHandler("users", listusers_command))
+    app.add_handler(CommandHandler("listusers", listusers_command))
 
     # Documents (PDFs)
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
