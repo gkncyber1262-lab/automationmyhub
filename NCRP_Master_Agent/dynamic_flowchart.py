@@ -424,8 +424,7 @@ def create_dynamic_3d_flowchart(ctx: dict, output_png: str, output_jpg: str, bas
                 curr_y += 22
         
         draw.text((760, max(curr_y + 6, cy2 - 62)), f"Credited: Rs. {it['disp']:,.2f}", fill=(0, 0, 0), font=f_amt)
-        l1_tag = "• Statutory Notice U/S 94 BNSS Issued" if is_fir else "• Bank Requisition Notice Issued"
-        draw.text((760, cy2 - 30), l1_tag, fill=(21, 128, 61), font=f_body_b)
+        draw.text((760, cy2 - 30), "• Statutory Notice U/S 94 BNSS Issued", fill=(21, 128, 61), font=f_body_b)
 
         # Connection tube from Victim to L1
         draw_tube((620, (v_box[1] + v_box[3]) // 2), (740, (cy1 + cy2) // 2), color=(51, 65, 85), width=4, label=f"Rs. {it['disp']:,.0f}")
@@ -572,16 +571,14 @@ def create_dynamic_3d_flowchart(ctx: dict, output_png: str, output_jpg: str, bas
     my += 26
     draw.text((2985, my), "STATUTORY COMPLIANCE", fill=(0, 0, 0), font=f_h2)
     my += 48
+    draw.text((2985, my), "• Notice U/S 94 BNSS: Issued", fill=(0, 0, 0), font=f_body)
+    my += 36
     if is_fir:
-        draw.text((2985, my), "• Notice U/S 94 BNSS: Issued", fill=(0, 0, 0), font=f_body)
-        my += 36
         draw.text((2985, my), "• Freeze U/S 106 BNSS: Dispatched", fill=(0, 0, 0), font=f_body)
         my += 36
         draw.text((2985, my), "• Case Diary: Zimni 02 Maintained", fill=(0, 0, 0), font=f_body)
     else:
-        draw.text((2985, my), "• Bank Requisition Notice: Issued", fill=(0, 0, 0), font=f_body)
-        my += 36
-        draw.text((2985, my), "• Debit Freeze Requisition: Dispatched", fill=(0, 0, 0), font=f_body)
+        draw.text((2985, my), "• Freeze Requisition: Dispatched", fill=(0, 0, 0), font=f_body)
         my += 36
         draw.text((2985, my), "• Case Diary: Skipped (Ack Stage)", fill=(71, 85, 105), font=f_body)
     my += 36

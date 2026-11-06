@@ -1159,7 +1159,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             f"क्या इस मामले में FIR दर्ज हो चुकी है?"
         )
         keyboard = [
-            [InlineKeyboardButton("📄 केवल NCRP शिकायत (Acknowledgement No.) [Default]", callback_data="fir:ncrp")],
+            [InlineKeyboardButton("📄 केवल NCRP शिकायत (Sec 94 BNSS) [Default]", callback_data="fir:ncrp")],
             [InlineKeyboardButton("⚖️ दर्ज FIR (FIR नंबर दर्ज करें)", callback_data="fir:registered")]
         ]
         await query.edit_message_text(prompt_fir, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -1351,7 +1351,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"👉 1 या 2 लिखकर भेजें:"
         )
         keyboard = [
-            [InlineKeyboardButton("📄 केवल NCRP शिकायत (Acknowledgement No.) [Default]", callback_data="fir:ncrp")],
+            [InlineKeyboardButton("📄 केवल NCRP शिकायत (Sec 94 BNSS) [Default]", callback_data="fir:ncrp")],
             [InlineKeyboardButton("⚖️ दर्ज FIR (FIR नंबर दर्ज करें)", callback_data="fir:registered")]
         ]
         await message.reply_text(prompt_fir, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -1680,10 +1680,7 @@ async def dispatch_case_files(
                         bot=bot,
                         chat_id=chat_id,
                         file_path=p,
-                        caption=(
-                            f"📑 [{idx}/{len(bank_pdfs)}] बैंक नोटिस (Sec 94 BNSS):\n`{bname}`" if is_fir
-                            else f"📑 [{idx}/{len(bank_pdfs)}] बैंक मांग पत्र (Bank Notice):\n`{bname}`"
-                        ),
+                        caption=f"📑 [{idx}/{len(bank_pdfs)}] बैंक नोटिस (Sec 94 BNSS):\n`{bname}`",
                         parse_mode=ParseMode.MARKDOWN
                     )
                     if ok:

@@ -2683,7 +2683,7 @@ class NCRPUnifiedAgent:
 
             else:
 
-                sub_str = f"Subject: Action required in NCRP Complaint ACK No. {ack_no} PS Cyber, North District, Delhi."
+                sub_str = f"Subject: Action required U/S 94 BNSS in ACK No. {ack_no} PS Cyber, North District, Delhi."
 
                 facts_ref_str = f"NCRP Complaint No. {ack_no}"
 
@@ -3297,7 +3297,7 @@ class NCRPUnifiedAgent:
             if is_fir:
                 r_sub = p_sub.add_run(f"Subject: - Action required U/s 94 BNSS in Case FIR No. {fir_no} Dated {fir_date} for ATM CCTV Footage (ATM ID: {atm_id}) PS Cyber, North District, Delhi. (Strictly Confidential)")
             else:
-                r_sub = p_sub.add_run(f"Subject: - Action required in NCRP Complaint ACK No. {ack_no} for ATM CCTV Footage (ATM ID: {atm_id}) PS Cyber, North District, Delhi. (Strictly Confidential)")
+                r_sub = p_sub.add_run(f"Subject: - Action required U/s 94 BNSS in ACK No. {ack_no} for ATM CCTV Footage (ATM ID: {atm_id}) PS Cyber, North District, Delhi. (Strictly Confidential)")
             set_font(r_sub, size=10.0, bold=True)
 
             # Brief Facts
@@ -3712,7 +3712,7 @@ class NCRPUnifiedAgent:
 
         p_sub.paragraph_format.space_after = Pt(2.5)
 
-        sub_str = f"Subject: Action required U/S 94 BNSS in Case FIR No. {fir_no} Dated {fir_date} U/S 318(4) BNS PS Cyber, North District, Delhi." if is_fir else f"Subject: Action required in NCRP Complaint ACK No. {ack_no} PS Cyber, North District, Delhi."
+        sub_str = f"Subject: Action required U/S 94 BNSS in Case FIR No. {fir_no} Dated {fir_date} U/S 318(4) BNS PS Cyber, North District, Delhi." if is_fir else f"Subject: Action required U/S 94 BNSS in ACK No. {ack_no} PS Cyber, North District, Delhi."
 
         r_sub = p_sub.add_run(sub_str)
 
@@ -4361,7 +4361,7 @@ class NCRPUnifiedAgent:
         if is_fir:
             r_ft = p_ft.add_run("नोट: यह निर्देशिका धारा 94/106 BNSS 2023 के तहत बैंकों को कानूनी नोटिस व जब्ती आदेश तामील कराने एवं भौतिक शाखा सत्यापन हेतु तैयार की गई है।")
         else:
-            r_ft = p_ft.add_run("नोट: यह निर्देशिका NCRP शिकायत के अंतर्गत जांच एवं सूचना संकलन हेतु तैयार की गई है।")
+            r_ft = p_ft.add_run("नोट: यह निर्देशिका धारा 94 BNSS के तहत बैंकों को कानूनी मांग पत्र तामील कराने एवं भौतिक शाखा सत्यापन हेतु तैयार की गई है।")
         set_font(r_ft, size=8.0, italic=True, color=RGBColor(100, 100, 100))
 
         tbl_sign = doc.add_table(rows=1, cols=3)
