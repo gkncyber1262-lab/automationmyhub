@@ -2063,6 +2063,17 @@ def main():
     print("[*] Using Long Polling (No Webhook/Tunnel required).")
     print("[*] Bot is listening for incoming NCRP Complaint PDFs...\n")
 
+    app = build_telegram_app(token)
+    app.run_polling(drop_pending_updates=True)
+
+
+def build_telegram_app(token: Optional[str] = None):
+    """Factory to build and configure Telegram Application with all handlers."""
+    cfg = load_telegram_credentials()
+    tok = token or cfg.get("bot_token", "").strip()
+    if not tok:
+        raise ValueError("Telegram Bot Token is required!")
+
     request_config = HTTPXRequest(
         connection_pool_size=16,
         connect_timeout=60.0,
@@ -2071,7 +2082,7 @@ def main():
         media_write_timeout=180.0,
         pool_timeout=60.0
     )
-    app = ApplicationBuilder().token(token).request(request_config).build()
+    app = ApplicationBuilder().token(tok).request(request_config).build()
 
     # Commands
     app.add_handler(CommandHandler("start", start_command))
@@ -2095,11 +2106,10 @@ def main():
     # Interactive Inline Buttons
     app.add_handler(CallbackQueryHandler(handle_callback_query))
 
-    # Text inputs (Replies for FIR no, FIR date, Notice date, Notice type, Layer range, Notice no, IO selection, Email, etc.)
+    # Text inputs
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
 
-    # Start Polling
-    app.run_polling()
+    return app
 
 
 if __name__ == "__main__":
