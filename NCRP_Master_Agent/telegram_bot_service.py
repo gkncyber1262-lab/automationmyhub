@@ -1271,12 +1271,25 @@ async def dispatch_case_files(
                 bot=bot,
                 chat_id=chat_id,
                 photo_path=radar_imgs[0],
-                caption="📊 *फोरेंसिक मनी ट्रेल 3D फ्लोचार्ट*\n(शुद्ध सफेद बैकग्राउंड, स्पष्ट ब्लैक फॉन्ट एवं प्रत्येक नोड में API से सत्यापित बैंक शाखा का पता)",
+                caption="📊 *फोरेंसिक मनी ट्रेल 3D फ्लोचार्ट (HD)*\n(शुद्ध सफेद बैकग्राउंड, बैंक लोगो, स्पष्ट ब्लैक फॉन्ट एवं API से सत्यापित बैंक शाखा का पता)",
                 parse_mode=ParseMode.MARKDOWN
             )
             await asyncio.sleep(1.5)
 
-        # 3b. DELIVER 3D MOVABLE INTERACTIVE HTML VISUALIZER FILE
+        # 3b. DELIVER 3D ANIMATED FLOWCHART GIF (Live Animated Pulse)
+        anim_gifs = glob.glob(os.path.join(case_dir, "forensic_money_trail_3d*animated*.gif"))
+        if anim_gifs:
+            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+            await safe_send_document(
+                bot=bot,
+                chat_id=chat_id,
+                file_path=anim_gifs[0],
+                caption="🎬 *3D एनिमेटेड फोरेंसिक मनी ट्रेल (Animated GIF)*\n(लेयर्स में पैसों के 3D फ्लो व गति का लाइव एनिमेशन)",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            await asyncio.sleep(1.5)
+
+        # 3c. DELIVER 3D MOVABLE INTERACTIVE HTML VISUALIZER FILE
         html_candidates = glob.glob(os.path.join(case_dir, "money_trail_3d_visualizer*.html"))
         if html_candidates:
             await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
