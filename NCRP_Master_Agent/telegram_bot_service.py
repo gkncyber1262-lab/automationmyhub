@@ -944,13 +944,39 @@ async def setsheeturl_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     new_url = args[0].strip()
-    from google_sheets_sync import get_sheets_config, DEFAULT_CONFIG_PATH
+    from google_sheets_sync import get_sheets_config, DEFAULT_CONFIG_PATH, COLUMNS_HEADER
     cfg = get_sheets_config()
     cfg["apps_script_webhook_url"] = new_url
     with open(DEFAULT_CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2, ensure_ascii=False)
 
-    await update.message.reply_text(f"✅ *Google Apps Script Webhook URL सफलतापूर्वक सेट हो गया!*\n`{new_url}`\nअब प्रत्येक केस का डेटा सीधे इस Google Sheet में लाइव अपडेट होगा।", parse_mode=ParseMode.MARKDOWN)
+    # Immediately push existing excel records to the Google Sheet
+    synced_info = ""
+    excel_path = os.path.join(BASE_DIR, "output", "Mule_Account_Master_Database.xlsx")
+    if os.path.exists(excel_path):
+        try:
+            import openpyxl, requests
+            wb = openpyxl.load_workbook(excel_path, data_only=True)
+            ws = wb.active
+            rows = []
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if row and any(row):
+                    rows.append([str(c if c is not None else '') for c in row])
+            if rows:
+                payload = {
+                    "action": "append_rows",
+                    "spreadsheet_name": cfg.get("spreadsheet_name", "Mule Account Database"),
+                    "sheet_tab": cfg.get("sheet_tab_name", "Mule_Accounts"),
+                    "headers": COLUMNS_HEADER,
+                    "rows": rows
+                }
+                resp = requests.post(new_url, json=payload, timeout=15)
+                if resp.status_code in [200, 201]:
+                    synced_info = f"\n🚀 *मौजूदा {len(rows)} सस्पेक्ट खाते तुरंत Google Sheet में भेज दिए गए हैं!*"
+        except Exception as se:
+            synced_info = f"\n(नोट: {se})"
+
+    await update.message.reply_text(f"✅ *Google Apps Script Webhook URL सफलतापूर्वक सेट हो गया!*\n`{new_url}`{synced_info}\n\nअब प्रत्येक केस का डेटा सीधे इस Google Sheet में लाइव अपडेट होगा।", parse_mode=ParseMode.MARKDOWN)
 
 
 async def sample_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
