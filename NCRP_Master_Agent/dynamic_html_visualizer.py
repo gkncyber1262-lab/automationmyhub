@@ -160,6 +160,7 @@ def create_dynamic_html_visualizer(ctx: dict, output_html: str):
         src = l2_nodes[0] if l2_nodes else (l1_nodes[-1] if l1_nodes else victim_id)
         links.append({"source": src, "target": atm_id, "amount": f"Rs. {atm_tot:,.2f}", "utr": "CASH WITHDRAWAL"})
 
+    sub_desc = f"{case_ref} | Section 318(4) BNS | Full 3D Interactive Visualization" if is_fir else f"{case_ref} | Preliminary Enquiry (No Sections) | Full 3D Interactive Visualization"
     nodes_json = json.dumps(nodes, ensure_ascii=False)
     links_json = json.dumps(links, ensure_ascii=False)
 
@@ -247,7 +248,7 @@ def create_dynamic_html_visualizer(ctx: dict, output_html: str):
     <div id="header-bar">
         <div>
             <div class="brand-title">🏛️ DELHI POLICE CYBER CRIME INVESTIGATION | 3D MONEY TRAIL MATRIX</div>
-            <div class="brand-sub">{case_ref} | Section 318(4) BNS | Full 3D Interactive Visualization</div>
+            <div class="brand-sub">{sub_desc}</div>
         </div>
         <div class="hud-actions">
             <button class="hud-btn" onclick="reset3DCamera()">⟲ Reset View</button>
