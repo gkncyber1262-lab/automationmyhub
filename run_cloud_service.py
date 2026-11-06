@@ -36,16 +36,42 @@ from telegram import Update
 from telegram_bot_service import build_telegram_app, load_telegram_credentials
 
 START_TIME = datetime.datetime.now()
-LOG_BUFFER = deque(maxlen=200)
+LOG_BUFFER = deque(maxlen=500)
 TG_APP = None
 IS_WEBHOOK_ACTIVE = False
+
+class LogBufferStream:
+    """Tees stdout and stderr to both terminal and in-memory LOG_BUFFER for remote debugging."""
+    def __init__(self, original_stream):
+        self.original_stream = original_stream
+
+    def write(self, s):
+        if self.original_stream:
+            try:
+                self.original_stream.write(s)
+            except Exception:
+                pass
+        stripped = s.strip()
+        if stripped:
+            ts = datetime.datetime.now().strftime("%H:%M:%S")
+            LOG_BUFFER.append(f"[{ts}] {stripped}")
+
+    def flush(self):
+        if self.original_stream:
+            try:
+                self.original_stream.flush()
+            except Exception:
+                pass
+
+# Redirect stdout and stderr so all logs & tracebacks are visible via /logs
+sys.stdout = LogBufferStream(sys.stdout)
+sys.stderr = LogBufferStream(sys.stderr)
 
 
 def log_event(msg: str):
     ts = datetime.datetime.now().strftime("%H:%M:%S")
     formatted = f"[{ts}] {msg}"
     print(formatted)
-    LOG_BUFFER.append(formatted)
 
 
 @asynccontextmanager

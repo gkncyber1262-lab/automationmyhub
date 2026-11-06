@@ -536,8 +536,11 @@ def execute_pipeline_sync(
 
     except Exception as e:
         import traceback
-        traceback.print_exc()
-        return {"success": False, "error": str(e)}
+        tb = traceback.format_exc()
+        print(f"[Pipeline Execution Error]:\n{tb}")
+        frames = traceback.extract_tb(sys.exc_info()[2])
+        loc = f"{os.path.basename(frames[-1].filename)}:{frames[-1].lineno}" if frames else "unknown"
+        return {"success": False, "error": f"{e} (at {loc})\n\n{tb}"}
     finally:
         try:
             import pythoncom
@@ -1753,8 +1756,13 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
     )
 
     if not res.get("success"):
-        err = res.get("error", "Unknown error")
-        await status_msg.edit_text(f"❌ *केस निष्पादन में त्रुटि आई:*\n`{err}`", parse_mode=ParseMode.MARKDOWN)
+        err = str(res.get("error", "Unknown error"))
+        # Cleanly display error with traceback safely
+        clean_err = err[:1500]
+        try:
+            await status_msg.edit_text(f"❌ *केस निष्पादन में त्रुटि आई:*\n```\n{clean_err}\n```", parse_mode=ParseMode.MARKDOWN)
+        except Exception:
+            await status_msg.edit_text(f"❌ केस निष्पादन में त्रुटि आई:\n{clean_err}")
         session["state"] = "idle"
         return
 

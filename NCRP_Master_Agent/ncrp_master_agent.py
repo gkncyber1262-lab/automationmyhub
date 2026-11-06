@@ -794,13 +794,15 @@ class NCRPUnifiedAgent:
 
         if initial_debits_raw:
 
-            raw_vacc = str(initial_debits_raw[0][1] or victim_acc).strip()
+            first_deb = initial_debits_raw[0] if isinstance(initial_debits_raw[0], (list, tuple)) else [initial_debits_raw[0]]
+
+            raw_vacc = str(first_deb[1] if len(first_deb) > 1 else (first_deb[0] if len(first_deb) > 0 else victim_acc)).strip()
 
             m_acc = re.search(r'(\d{9,25})', raw_vacc)
 
             victim_acc = m_acc.group(1) if m_acc else raw_vacc.replace('\n', ' ')
 
-            victim_bank = str(initial_debits_raw[0][8] or victim_bank).strip().replace('\n', ' ') if len(initial_debits_raw[0]) > 8 else victim_bank
+            victim_bank = str(first_deb[8] or victim_bank).strip().replace('\n', ' ') if len(first_deb) > 8 else victim_bank
 
 
 
@@ -1443,13 +1445,15 @@ class NCRPUnifiedAgent:
 
         if initial_debits_raw:
 
+            first_deb = initial_debits_raw[0] if isinstance(initial_debits_raw[0], (list, tuple)) else [initial_debits_raw[0]]
+
             if victim_acc == "Victim Account":
 
-                victim_acc = str(initial_debits_raw[0][1] or victim_acc).strip()
+                victim_acc = str(first_deb[1] if len(first_deb) > 1 else (first_deb[0] if len(first_deb) > 0 else victim_acc)).strip()
 
-            if len(initial_debits_raw[0]) > 8 and initial_debits_raw[0][8]:
+            if len(first_deb) > 8 and first_deb[8]:
 
-                victim_bank = str(initial_debits_raw[0][8]).strip()
+                victim_bank = str(first_deb[8]).strip()
 
             sum_init = sum(float(str(r[4] or '0').replace(',', '').strip()) for r in initial_debits_raw if re.match(r'^[\d,.]+$', str(r[4] or '').strip()))
 
@@ -1843,15 +1847,16 @@ class NCRPUnifiedAgent:
 
             for idx, r in enumerate(debits, 1):
 
-                tx_id = str(r[2] or '').replace('\n', '')
+                tx_id = str(r[2] or '').replace('\n', '') if len(r) > 2 else ''
 
-                mode = str(r[3] or 'IMPS/UPI').replace('\n', ' ').split()[0]
+                mode_parts = str(r[3] or 'IMPS/UPI').replace('\n', ' ').split() if len(r) > 3 else ['IMPS/UPI']
+                mode = mode_parts[0] if mode_parts else 'IMPS/UPI'
 
-                amt_s = str(r[4] or '0.00').replace('\n', '')
+                amt_s = str(r[4] or '0.00').replace('\n', '') if len(r) > 4 else '0.00'
 
-                dt_s = str(r[6] or '').replace('\n', ' ')
+                dt_s = str(r[6] or '').replace('\n', ' ') if len(r) > 6 else ''
 
-                b_s = str(r[8] or comp.get('victim_bank', '')).replace('\n', ' ')
+                b_s = str(r[8] or comp.get('victim_bank', '')).replace('\n', ' ') if len(r) > 8 else comp.get('victim_bank', '')
 
                 try:
 
@@ -2288,12 +2293,14 @@ class NCRPUnifiedAgent:
 
 
         for r in case_context.get("raw_transfers", []):
+            if not r:
+                continue
 
-            sr = str(r[0] or '').strip()
+            sr = str(r[0] or '').strip() if len(r) > 0 else ''
 
-            bank_fii = str(r[1] or '').strip().replace('\n', ' ')
+            bank_fii = str(r[1] or '').strip().replace('\n', ' ') if len(r) > 1 else ''
 
-            acc_info = str(r[2] or '').strip()
+            acc_info = str(r[2] or '').strip() if len(r) > 2 else ''
 
             lines = [l.strip() for l in acc_info.split('\n') if l.strip()]
 
@@ -2365,10 +2372,10 @@ class NCRPUnifiedAgent:
         for r in case_context.get("raw_holds", []):
             if not r:
                 continue
-            s_no = str(r[0] or '').strip()
-            acc_num = str(r[1] or '').strip().replace('\n', ' ')
-            hold_dt = str(r[2] or '').strip().replace('\n', ' ')
-            hold_amt = str(r[3] or '').strip().replace('\n', ' ')
+            s_no = str(r[0] or '').strip() if len(r) > 0 else ''
+            acc_num = str(r[1] or '').strip().replace('\n', ' ') if len(r) > 1 else ''
+            hold_dt = str(r[2] or '').strip().replace('\n', ' ') if len(r) > 2 else ''
+            hold_amt = str(r[3] or '').strip().replace('\n', ' ') if len(r) > 3 else '0.00'
             if len(r) == 6:
                 ref_rem = ""
                 action_by = str(r[4] or '').strip().replace('\n', ' ')
@@ -5684,6 +5691,8 @@ class NCRPUnifiedAgent:
         # Mule accounts
 
         for r in case_context.get("raw_transfers", []):
+            if not r or len(r) < 3:
+                continue
 
             acc_info = str(r[2] or '')
 
@@ -5693,9 +5702,9 @@ class NCRPUnifiedAgent:
 
             if acc_no and acc_no != case_context["complainant"]["victim_account"]:
 
-                b_name = str(r[1] or '').replace('\n', ' ')
+                b_name = str(r[1] or '').replace('\n', ' ') if len(r) > 1 else ''
 
-                utr = str(r[3] or '').replace('\n', '')
+                utr = str(r[3] or '').replace('\n', '') if len(r) > 3 else ''
 
                 disp_str = str(r[6] or '0' if len(r) > 6 else '0').replace(',', '').replace(' ', '')
 
