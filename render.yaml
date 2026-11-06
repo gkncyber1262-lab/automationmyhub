@@ -1,11 +1,16 @@
 services:
   - type: web
-    name: ncrp-whatsapp-bot
+    name: ncrp-cyber-investigation-bot
     env: docker
+    dockerfilePath: ./Dockerfile
     plan: free
     region: frankfurt
     autoDeploy: true
     healthCheckPath: /health
     envVars:
       - key: PORT
-        value: 5005
+        value: 8000
+      - key: TELEGRAM_BOT_TOKEN
+        value: 8379206170:AAH2wSD9t9CVVr9truynJPHmTUa2RV_BYyU
+      - key: TELEGRAM_ADMIN_CHAT_ID
+        value: "8160205906"
