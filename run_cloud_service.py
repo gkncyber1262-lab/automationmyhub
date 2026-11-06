@@ -17,6 +17,7 @@ import time
 import subprocess
 import threading
 import datetime
+from collections import deque
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import uvicorn
@@ -31,40 +32,58 @@ if NCRP_DIR not in sys.path:
 START_TIME = datetime.datetime.now()
 BOT_PROCESS = None
 IS_RUNNING = True
+LOG_BUFFER = deque(maxlen=200)
+LAST_EXIT_INFO = {"code": None, "time": None}
 
 
 def telegram_bot_supervisor():
     """Supervises and auto-restarts Telegram Bot process in background."""
-    global BOT_PROCESS, IS_RUNNING
+    global BOT_PROCESS, IS_RUNNING, LAST_EXIT_INFO
     tg_script = os.path.join(NCRP_DIR, "telegram_bot_service.py")
 
     while IS_RUNNING:
-        print(f"\n[Cloud Supervisor] Starting Telegram Bot Service: {tg_script} ...")
+        msg = f"[{datetime.datetime.now().strftime('%H:%M:%S')}] [Supervisor] Spawning: {sys.executable} {tg_script}"
+        print(msg)
+        LOG_BUFFER.append(msg)
         try:
             BOT_PROCESS = subprocess.Popen(
-                [sys.executable, tg_script],
+                [sys.executable, "-u", tg_script],
                 cwd=NCRP_DIR,
-                stdout=sys.stdout,
-                stderr=sys.stderr
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
             )
-            ret_code = BOT_PROCESS.wait()
-            print(f"[Cloud Supervisor] Telegram Bot exited with code {ret_code}.")
+            # Stream output into LOG_BUFFER and stdout
+            for line in iter(BOT_PROCESS.stdout.readline, ''):
+                clean_l = line.rstrip()
+                if clean_l:
+                    print(clean_l)
+                    LOG_BUFFER.append(clean_l)
+            BOT_PROCESS.wait()
+            ret_code = BOT_PROCESS.returncode
+            LAST_EXIT_INFO = {"code": ret_code, "time": datetime.datetime.now().strftime('%H:%M:%S')}
+            exit_msg = f"[Supervisor] Bot exited with code {ret_code}."
+            print(exit_msg)
+            LOG_BUFFER.append(exit_msg)
         except Exception as e:
-            print(f"[Cloud Supervisor Error] Exception running Telegram Bot: {e}")
+            err_msg = f"[Supervisor Error] {e}"
+            print(err_msg)
+            LOG_BUFFER.append(err_msg)
 
         if IS_RUNNING:
-            print("[Cloud Supervisor] Restarting Telegram Bot in 5 seconds...")
+            wait_msg = "[Supervisor] Restarting in 5 seconds..."
+            print(wait_msg)
+            LOG_BUFFER.append(wait_msg)
             time.sleep(5)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     t = threading.Thread(target=telegram_bot_supervisor, daemon=True)
     t.start()
-    print("[Cloud Runner] Telegram Bot Supervisor thread started successfully.")
+    print("[Cloud Runner] Telegram Bot Supervisor started.")
     yield
-    # Shutdown
     global IS_RUNNING, BOT_PROCESS
     IS_RUNNING = False
     if BOT_PROCESS and BOT_PROCESS.poll() is None:
@@ -86,22 +105,33 @@ app = FastAPI(
 @app.get("/")
 def root():
     uptime_sec = int((datetime.datetime.now() - START_TIME).total_seconds())
+    is_active = bool(BOT_PROCESS and BOT_PROCESS.poll() is None)
     return {
         "status": "online",
         "service": "Delhi Police NCRP Investigation Agent",
-        "telegram_bot": "active" if (BOT_PROCESS and BOT_PROCESS.poll() is None) else "starting",
+        "telegram_bot": "active" if is_active else "restarting",
         "uptime_seconds": uptime_sec,
+        "last_exit": LAST_EXIT_INFO,
         "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
 
 
 @app.get("/health")
 def health_check():
-    # Health check endpoint for Koyeb / UptimeRobot
+    is_active = bool(BOT_PROCESS and BOT_PROCESS.poll() is None)
     return {
         "status": "healthy",
-        "telegram_running": bool(BOT_PROCESS and BOT_PROCESS.poll() is None),
+        "telegram_running": is_active,
+        "last_exit": LAST_EXIT_INFO,
         "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+
+@app.get("/logs")
+def view_logs():
+    return {
+        "total_lines": len(LOG_BUFFER),
+        "logs": list(LOG_BUFFER)
     }
 
 
@@ -109,6 +139,6 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print(f"==========================================================================")
     print(f" [*] DELHI POLICE CYBER CRIME INVESTIGATION - 24/7 CLOUD SERVICE")
-    print(f" [*] Koyeb HTTP Port: {port} | Healthcheck: /health")
+    print(f" [*] Port: {port} | Health: /health | Logs: /logs")
     print(f"==========================================================================")
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
