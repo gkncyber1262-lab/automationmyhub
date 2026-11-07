@@ -110,5 +110,125 @@
     "state": "JHARKHAND",
     "district": "DHANBAD",
     "contact": "+917283233140"
+  },
+  "CNRB0018833": {
+    "branch": "MEERUT JAHIDPUR",
+    "address": "1 HAPUR ROAD V AND PO JAHIDPUR MEERUT MEERUT 250 002",
+    "city": "MEERUT",
+    "state": "UTTAR PRADESH"
+  },
+  "CNRB0018849": {
+    "branch": "MEERUT SHASTRI NAGAR II",
+    "address": "NEW HORIZON PUBLIC SCHOOL ZAIDI NAGAR SOCIETY SHASTRI NAGAR MEERUT MEERUT 250 002",
+    "city": "MEERUT",
+    "state": "UTTAR PRADESH"
+  },
+  "CNRB0001627": {
+    "branch": "PULL JOGAIN MAIN, SAHARANPUR",
+    "address": "4/330, ABC PULLJOGIAN CHAKROTA ROAD, SAHARANPUR 247001",
+    "city": "SAHARANPUR",
+    "state": "UTTAR PRADESH"
+  },
+  "ICIC0007465": {
+    "branch": "BOUMANJEE ROAD SAHARANPUR",
+    "address": "ICICI BANK LTD., BOMANJEE ROAD, SAHARANPUR.247001, UTTAR PRADESH",
+    "city": "SAHARANPUR",
+    "state": "UTTAR PRADESH"
+  },
+  "BARB0MOREGA": {
+    "branch": "BRANCH",
+    "address": "5/147 NEAR PUL KHU BOMANJI ROAD MORGANJ SAHARANPUR UTTAR PRADESH 247001",
+    "city": "RUPNAGAR",
+    "state": "UTTAR PRADESH"
+  },
+  "SBIN0050217": {
+    "branch": "SAHARANPUR",
+    "address": "CHAKRATA ROAD SAHARANPUR UP 247001",
+    "city": "SAHARANPUR",
+    "state": "UTTAR PRADESH"
+  },
+  "FINO0000001": {
+    "branch": "Fino Payments Bank IMPS",
+    "address": "MINDSPACE JUINAGAR, PLOT NO. GEN 2/1/F, TOWER 1, 8TH FLOOR, TTC INDUSTRIAL AREA, MIDC SHIRWANE, JUINAGAR, NAVI MUMBAI- 400 706",
+    "city": "MUMBAI",
+    "state": "MAHARASHTRA"
+  },
+  "SBIN0000001": {
+    "branch": "KOLKATA MAIN",
+    "address": "SAMRIDDHI BHAWAN, 1 STRAND ROAD, KOLKATA 700 001",
+    "city": "KOLKATA",
+    "state": "WEST BENGAL"
+  },
+  "CNRB0000033": {
+    "branch": "DIGITAL BANKING SERVISES WING",
+    "address": "CANARA BANK HEAD OFFICE 5TH FLOOR NAVEEN COMPLEX 14 MG RD BANGALORE KARNATAKA 560001",
+    "city": "BANGALORE URBAN",
+    "state": "KARNATAKA"
+  },
+  "BKID0007810": {
+    "branch": "SAHARANPUR",
+    "address": "SHRI TRILOK CHAND JAIN MARKETCOURT ROAD",
+    "city": "SAHARANPUR",
+    "state": "UTTAR PRADESH"
+  },
+  "HDFC0MERUPI": {
+    "branch": "NPCI UPI Virtual Routing Switch",
+    "address": "National NPCI UPI Switching Gateway / Digital Wallet PG Node",
+    "city": "Mumbai",
+    "state": "Maharashtra"
+  },
+  "HDFC0001334": {
+    "branch": "MAJITHA MANDI - AMRITSAR",
+    "address": "DHAB WASTI RAMNEAR FIRE BRIGADE OFFICEMAJITH MANDI",
+    "city": "AMRITSAR",
+    "state": "PUNJAB"
+  },
+  "BARB0BUPGBX": {
+    "branch": "Baroda Uttar Pradesh Gramin Bank IMPS",
+    "address": "2ND&3RD FLOOR,NBCC COMMERCIAL COMPLEX, VARDAN KHAND,GOMTI NAGAR EXTENSION,LUCKNOW-226010",
+    "city": "MUMBAI",
+    "state": "MAHARASHTRA"
+  },
+  "INDB0000012": {
+    "branch": "GREATER KAILASH II",
+    "address": "M-56 GREATER KAILASH II (MAIN MARKET) NEW DELHI 110 048",
+    "city": "DELHI",
+    "state": "DELHI"
+  },
+  "IOBA0001532": {
+    "branch": "MEERUT SHASTRI NAGAR",
+    "address": "B 7,SHASTRI NAGAR,MEERUT PIN 250005",
+    "city": "MEERUT",
+    "state": "UTTAR PRADESH"
+  },
+  "CBIN0283748": {
+    "branch": "SHASTRI NAGAR",
+    "address": "K 1265 SHASTRI NAGAR MEERUT",
+    "city": "MEERUT",
+    "state": "UTTAR PRADESH"
+  },
+  "YESB0000096": {
+    "branch": "KOCHI, KERALA",
+    "address": "FIRST FLOOR, PUTHURAN PLAZA, NORTHERN SIDE, KPCC JUNCTION, M G ROAD, KOCHI, KERALA-682011",
+    "city": "ERNAKULAM",
+    "state": "KERALA"
+  },
+  "SBIN0002488": {
+    "branch": "S.B.MEERUT",
+    "address": "MEERUT, UTTAR PRADESH, PIN 250002",
+    "city": "MEERUT",
+    "state": "UTTAR PRADESH"
+  },
+  "UTIB0AXLUPI": {
+    "branch": "NPCI UPI Virtual Routing Switch",
+    "address": "National NPCI UPI Switching Gateway / Digital Wallet PG Node",
+    "city": "Mumbai",
+    "state": "Maharashtra"
+  },
+  "SBIN0004441": {
+    "branch": "KANKAR KHERA,MEERUT",
+    "address": "1 BY 100 SHRADHHA PURIKANKAR KHERA,MEERUT CANTT ,PIN - 250001",
+    "city": "MEERUT",
+    "state": "UTTAR PRADESH"
   }
 }

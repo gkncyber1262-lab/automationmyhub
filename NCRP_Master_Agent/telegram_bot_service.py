@@ -340,6 +340,17 @@ async def check_access(update: Update) -> bool:
     return True
 
 
+def extract_amount_value(amt_val) -> float:
+    """Extracts a numeric float value from amount strings such as '1,50,000.00' or 'Rs. 50000'."""
+    if amt_val is None:
+        return 0.0
+    cleaned = re.sub(r'[^\d.]', '', str(amt_val))
+    try:
+        return float(cleaned)
+    except Exception:
+        return 0.0
+
+
 def create_case_zip_bundle(case_dir: str) -> Optional[str]:
     """Creates a complete ZIP archive of all generated notices and files."""
     try:
@@ -559,9 +570,9 @@ async def prompt_fir_date_selection(target_ui, session: Dict[str, Any]):
     fir_no = session.get("fir_details", {}).get("fir_no", "N/A")
 
     msg_text = (
-        f"✅ दर्ज FIR नंबर: *{fir_no}*\n\n"
-        f"📅 *[सवाल 2b] FIR दर्ज होने की तारीख (FIR Date):*\n"
-        f"कृपया FIR की तारीख चुनें या सीधे टाइप करें (उदा. `DD/MM/YYYY`):"
+        f"✅ दर्ज e-FIR नंबर: *{fir_no}*\n\n"
+        f"📅 *[सवाल 2b] e-FIR दर्ज होने की तारीख (FIR Date):*\n"
+        f"कृपया e-FIR की तारीख चुनें या सीधे टाइप करें (उदा. `DD/MM/YYYY`):"
     )
     keyboard = [
         [InlineKeyboardButton(f"📅 आज की तारीख ({today_str}) [Default]", callback_data="firdate:today")],
@@ -574,15 +585,16 @@ async def prompt_fir_date_selection(target_ui, session: Dict[str, Any]):
         await target_ui.reply_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
 
 
-async def prompt_notice_date_selection(target_ui, session: Dict[str, Any]):
+async def prompt_notice_date_selection(target_ui, session: Dict[str, Any], prefix_msg: str = ""):
     """Prompts for Notice Date."""
     session["state"] = "awaiting_notice_date"
     today_str = datetime.datetime.now().strftime("%d/%m/%Y")
 
     is_fir = session.get("fir_details", {}).get("is_fir", False)
-    ref_info = f"FIR No. {session.get('fir_details', {}).get('fir_no', '')} (Dated: {session.get('fir_date', today_str)})" if is_fir else f"NCRP Ack {session.get('ack_no', '')}"
+    ref_info = f"e-FIR No. {session.get('fir_details', {}).get('fir_no', '')} (Dated: {session.get('fir_date', today_str)})" if is_fir else f"NCRP Ack {session.get('ack_no', '')} (राशि < ₹1 लाख)"
 
     msg_text = (
+        f"{prefix_msg}"
         f"✅ केस संदर्भ: *{ref_info}*\n\n"
         f"📅 *[सवाल 3] नोटिस जारी करने की तारीख (Notice Date):*\n"
         f"बैंक व ATM नोटिसों पर कौन-सी तारीख अंकित करनी है?"
@@ -629,15 +641,15 @@ async def prompt_layer_selection(target_ui, session: Dict[str, Any]):
         f"✅ चयनित नोटिस प्रकार: *{ntype_str}*\n\n"
         f"🌐 *[सवाल 5] बैंक नोटिस लेयर रेंज (Layer Limit):*\n"
         f"बैंक नोटिस किस लेयर तक तैयार करने हैं?\n"
-        f"(लेयर रेंज चुनकर केवल इच्छित लेयर्स के बैंक नोटिस तैयार करें):"
+        f"(अनुशंसित: सभी लेयर्स के नोटिस तैयार करने के लिए पहला बटन दबाएं):"
     )
     keyboard = [
+        [InlineKeyboardButton("🌐 सभी लेयर्स के नोटिस (Layers 1-5+) [Default]", callback_data="layer:all")],
         [InlineKeyboardButton("1️⃣ केवल 1st Layer (Entry Mules)", callback_data="layer:1")],
         [InlineKeyboardButton("2️⃣ 2nd Layer तक (Layers 1-2)", callback_data="layer:2")],
         [InlineKeyboardButton("3️⃣ 3rd Layer तक (Layers 1-3)", callback_data="layer:3")],
         [InlineKeyboardButton("4️⃣ 4th Layer तक (Layers 1-4)", callback_data="layer:4")],
-        [InlineKeyboardButton("5️⃣ 5th Layer तक (Layers 1-5)", callback_data="layer:5")],
-        [InlineKeyboardButton("🌐 सभी लेयर्स (All Layers) [Default]", callback_data="layer:all")]
+        [InlineKeyboardButton("5️⃣ 5th Layer तक (Layers 1-5)", callback_data="layer:5")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     if hasattr(target_ui, "edit_message_text"):
@@ -649,7 +661,7 @@ async def prompt_layer_selection(target_ui, session: Dict[str, Any]):
 async def prompt_notice_no_selection(target_ui, session: Dict[str, Any]):
     """Prompts for Starting Notice Number."""
     session["state"] = "awaiting_notice_no"
-    max_l = session.get("max_layer", 5)
+    max_l = session.get("max_layer", 999)
     layer_desc = "सभी लेयर्स (1-5+)" if max_l >= 900 else f"लेयर {max_l} तक"
 
     msg_text = (
@@ -674,12 +686,12 @@ async def prompt_email_selection(target_ui, session: Dict[str, Any]):
     notice_no = session.get("notice_no", 5744)
     msg_text = (
         f"✅ चयनित नोटिस नंबर: *{notice_no}*\n\n"
-        f"📧 *[सवाल 7] बैंक नोटिस ईमेल ऑटोमेशन:*\n"
-        f"क्या सभी बैंक नोटिस ईमेल द्वारा भी भेजने हैं?\n"
-        f"(ईमेल बॉडी में DOCX का पूरा ड्राफ्ट रहेगा और साथ में हस्ताक्षरित PDF फ़ाइल अटैच होगी)"
+        f"📧 *[सवाल 7] नोटिस ईमेल बैकअप:*\n"
+        f"क्या सभी तैयार नोटिस आपके आधिकारिक ईमेल पर प्राप्त करने हैं?\n"
+        f"🔒 *सुरक्षा नियम:* नोटिस सीधे किसी बैंक को नहीं भेजे जाते हैं, केवल जांच अधिकारी के अधिकृत ईमेल पर भेजे जाते हैं।"
     )
     keyboard = [
-        [InlineKeyboardButton("📧 डिफ़ॉल्ट NIC ईमेल (Gmail द्वारा) [Default]", callback_data="email:default")],
+        [InlineKeyboardButton("📧 डिफ़ॉल्ट ईमेल (rajendra.28082016@delhipolice.gov.in) [Default]", callback_data="email:default")],
         [InlineKeyboardButton("✉️ अन्य ईमेल पता दर्ज करें", callback_data="email:custom")],
         [InlineKeyboardButton("⏭️ ईमेल न भेजें (केवल Telegram पर चाहिए)", callback_data="email:skip")]
     ]
@@ -1177,9 +1189,11 @@ async def process_received_pdf(pdf_path: str, message, chat_id: int):
     fin = ctx.get("financial_summary", {})
     ack_no = meta.get("acknowledgement_no", "N/A")
     session["ack_no"] = ack_no
+    session["alleged_amount"] = fin.get("alleged_amount") or fin.get("defrauded_amount") or "0"
 
     await prog_msg.delete()
 
+    amt_val = extract_amount_value(session["alleged_amount"])
     summary_card = (
         f"📋 *NCRP शिकायत प्राप्त व विश्लेषित!*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -1187,7 +1201,8 @@ async def process_received_pdf(pdf_path: str, message, chat_id: int):
         f"• *पीड़ित का नाम*: {comp.get('name', 'N/A')}\n"
         f"• *ठगी की राशि*: Rs. {fin.get('alleged_amount', '0')}\n"
         f"• *होल्ड राशि*: Rs. {fin.get('total_lien_amount', '0')}\n"
-        f"• *बैंक लेयर्स*: 1 से 5 (CCTV व चेक पूर्णतः विश्लेषित)\n"
+        f"• *केस वर्गीकरण*: {'⚖️ e-FIR (राशि ₹1 लाख या अधिक)' if amt_val > 99999 else '📄 NCRP शिकायत (राशि < ₹1 लाख)'}\n"
+        f"• *बैंक लेयर्स*: 1 से 5+ (CCTV व चेक पूर्णतः विश्लेषित)\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"📌 *[सवाल 1] कृपया जांच अधिकारी (IO) का चयन करें:*"
     )
@@ -1396,19 +1411,32 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         session["io_name"] = parsed["name"]
         session["io_rank"] = parsed["rank"]
         session["io_mobile"] = parsed["mobile"]
-        session["state"] = "awaiting_fir_choice"
 
-        prompt_fir = (
-            f"✅ चयनित जांच अधिकारी: *{parsed['name']}* ({parsed['rank']})\n\n"
-            f"📌 *[सवाल 2] केस संदर्भ (Case Reference):*\n"
-            f"क्या इस मामले में FIR दर्ज हो चुकी है?"
-        )
-        keyboard = [
-            [InlineKeyboardButton("📄 केवल NCRP शिकायत (Sec 94 BNSS) [Default]", callback_data="fir:ncrp")],
-            [InlineKeyboardButton("⚖️ दर्ज FIR (FIR नंबर दर्ज करें)", callback_data="fir:registered")]
-        ]
-        await query.edit_message_text(prompt_fir, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
-        return
+        amt_val = extract_amount_value(session.get("alleged_amount", 0))
+        if amt_val <= 99999:
+            # Under ₹1 Lakh (<= 99,999) -> Strictly NCRP Complaint, NO e-FIR prompt
+            session["fir_details"] = {"is_fir": False}
+            formatted_amt = f"{amt_val:,.2f}"
+            notify_text = (
+                f"✅ चयनित जांच अधिकारी: *{parsed['name']}* ({parsed['rank']})\n"
+                f"ℹ️ ठगी की राशि: *Rs. {formatted_amt}* (₹1 लाख से कम)\n"
+                f"👉 नियम अनुसार इसे *NCRP शिकायत (धारा 94 BNSS)* के रूप में प्रोसेस किया जा रहा है। (e-FIR की आवश्यकता नहीं है)\n\n"
+            )
+            await prompt_notice_date_selection(query, session, prefix_msg=notify_text)
+            return
+        else:
+            # ₹1 Lakh or more (> 99,999) -> Strictly e-FIR, prompt for FIR Number & Date
+            session["state"] = "awaiting_fir_number"
+            formatted_amt = f"{amt_val:,.2f}"
+            prompt_fir_no = (
+                f"✅ चयनित जांच अधिकारी: *{parsed['name']}* ({parsed['rank']})\n"
+                f"⚖️ ठगी की राशि: *Rs. {formatted_amt}* (₹1 लाख या अधिक)\n"
+                f"👉 नियम अनुसार इसे *e-FIR* के रूप में ट्रीट किया जा रहा है।\n\n"
+                f"📝 *[सवाल 2a] कृपया e-FIR नंबर दर्ज करें:*\n"
+                f"उदा. `45/2026` या `282/2026` लिखकर भेजें:"
+            )
+            await query.edit_message_text(prompt_fir_no, parse_mode=ParseMode.MARKDOWN)
+            return
 
     # Step 2: FIR Selection
     if data.startswith("fir:"):
@@ -1439,7 +1467,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             return
         else:
             session["state"] = "awaiting_fir_date_input"
-            await query.edit_message_text("📝 *कृपया FIR दर्ज होने की तारीख (DD/MM/YYYY) लिखकर भेजें:*", parse_mode=ParseMode.MARKDOWN)
+            await query.edit_message_text("📝 *कृपया e-FIR दर्ज होने की तारीख (DD/MM/YYYY) लिखकर भेजें:*", parse_mode=ParseMode.MARKDOWN)
             return
 
     # Step 3: Notice Date Selection
@@ -1569,21 +1597,32 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         session["io_name"] = parsed["name"]
         session["io_rank"] = parsed["rank"]
         session["io_mobile"] = parsed["mobile"]
-        session["state"] = "awaiting_fir_choice"
 
-        prompt_fir = (
-            f"✅ चयनित जांच अधिकारी: *{parsed['name']}* ({parsed['rank']})\n\n"
-            f"📌 *[सवाल 2] क्या FIR दर्ज हो चुकी है?*\n"
-            f"*[1]* केवल NCRP शिकायत है [Default]\n"
-            f"*[2]* FIR दर्ज हो चुकी है\n\n"
-            f"👉 1 या 2 लिखकर भेजें:"
-        )
-        keyboard = [
-            [InlineKeyboardButton("📄 केवल NCRP शिकायत (Sec 94 BNSS) [Default]", callback_data="fir:ncrp")],
-            [InlineKeyboardButton("⚖️ दर्ज FIR (FIR नंबर दर्ज करें)", callback_data="fir:registered")]
-        ]
-        await message.reply_text(prompt_fir, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
-        return
+        amt_val = extract_amount_value(session.get("alleged_amount", 0))
+        if amt_val <= 99999:
+            # Under ₹1 Lakh (<= 99,999) -> Strictly NCRP Complaint, NO e-FIR prompt
+            session["fir_details"] = {"is_fir": False}
+            formatted_amt = f"{amt_val:,.2f}"
+            notify_text = (
+                f"✅ चयनित जांच अधिकारी: *{parsed['name']}* ({parsed['rank']})\n"
+                f"ℹ️ ठगी की राशि: *Rs. {formatted_amt}* (₹1 लाख से कम)\n"
+                f"👉 नियम अनुसार इसे *NCRP शिकायत (धारा 94 BNSS)* के रूप में प्रोसेस किया जा रहा है। (e-FIR की आवश्यकता नहीं है)\n\n"
+            )
+            await prompt_notice_date_selection(message, session, prefix_msg=notify_text)
+            return
+        else:
+            # ₹1 Lakh or more (> 99,999) -> Strictly e-FIR, prompt for FIR Number & Date
+            session["state"] = "awaiting_fir_number"
+            formatted_amt = f"{amt_val:,.2f}"
+            prompt_fir_no = (
+                f"✅ चयनित जांच अधिकारी: *{parsed['name']}* ({parsed['rank']})\n"
+                f"⚖️ ठगी की राशि: *Rs. {formatted_amt}* (₹1 लाख या अधिक)\n"
+                f"👉 नियम अनुसार इसे *e-FIR* के रूप में ट्रीट किया जा रहा है।\n\n"
+                f"📝 *[सवाल 2a] कृपया e-FIR नंबर दर्ज करें:*\n"
+                f"उदा. `45/2026` या `282/2026` लिखकर भेजें:"
+            )
+            await message.reply_text(prompt_fir_no, parse_mode=ParseMode.MARKDOWN)
+            return
 
     # State: Awaiting FIR choice
     if current_state == "awaiting_fir_choice":
@@ -1820,7 +1859,20 @@ async def dispatch_case_files(
     sent_atm_count = 0
 
     try:
-        # 1. DELIVER COMBINE NOTICE DOCX (If bank notices enabled) - Sent directly (NO ZIP)
+        # 0. DELIVER COMPLETE CASE ZIP BUNDLE FIRST (All notices, diagrams, directories in 1 bundle)
+        zip_file = create_case_zip_bundle(case_dir)
+        if zip_file and os.path.exists(zip_file):
+            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+            await safe_send_document(
+                bot=bot,
+                chat_id=chat_id,
+                file_path=zip_file,
+                caption=f"📦 *संपूर्ण केस नोटिस बंडल (Complete Case Bundle ZIP)*\n• {safe_ref}\n• (सभी बैंक नोटिस DOCX व PDF, ATM CCTV नोटिस, कंबाइंड मांग पत्र व 3D फ्लोचार्ट)",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            await asyncio.sleep(1.5)
+
+        # 1. DELIVER COMBINE NOTICE DOCX (If bank notices enabled)
         if notice_type in ["both", "bank"]:
             combine_candidates = (
                 glob.glob(os.path.join(case_dir, "combine_notice", "*.docx")) or

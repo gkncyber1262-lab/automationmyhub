@@ -816,10 +816,15 @@ class EmailDispatchAgent:
             recipient = default_target_nic
             cc = self.config.get("forwarding_target", {}).get("cc_emails", [])
             subject = f"[FWD NOTICE U/S 94 BNSS] - {entity} | {case_ref} | Cyber PS North"
-        else: # direct_to_nodal
-            recipient = notice_info.get("primary_email", "")
-            cc = [default_target_nic]
-            subject = f"STATUTORY POLICE NOTICE U/S 94 BNSS | {entity} | {case_ref}"
+        else: # direct_to_nodal or any other mode
+            # MANDATORY USER SAFETY ENFORCEMENT:
+            # Under NO circumstance should notices be dispatched directly to bank nodal emails without explicit user instruction.
+            # Bank emails must NOT be added or sent to automatically.
+            # Route all notices strictly to the officer's default email address.
+            print(f"  [SAFETY SHIELD] Direct bank dispatch to '{notice_info.get('primary_email', '')}' is blocked per user order. Routing safely to officer email: {default_target_nic}")
+            recipient = default_target_nic
+            cc = []
+            subject = f"[FWD NOTICE U/S 94 BNSS] - {entity} | {case_ref} | Cyber PS North"
 
         # Parse Notice Content into Body
         plain_body, html_body = self.parse_notice_document(docx_path, entity_name=entity)

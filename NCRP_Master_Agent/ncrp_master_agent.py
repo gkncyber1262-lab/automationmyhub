@@ -385,10 +385,17 @@ class NCRPUnifiedAgent:
         # Headless LibreOffice / soffice fallback for Linux Cloud / Docker
         try:
             import subprocess
+            import shutil
             out_dir = os.path.dirname(os.path.abspath(pdf_path))
-            cmd = ['soffice', '--headless', '--convert-to', 'pdf', '--outdir', out_dir, os.path.abspath(docx_path)]
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=40)
-            return
+            bin_name = 'libreoffice' if shutil.which('libreoffice') else ('soffice' if shutil.which('soffice') else None)
+            if bin_name:
+                cmd = [bin_name, '--headless', '--convert-to', 'pdf', '--outdir', out_dir, os.path.abspath(docx_path)]
+                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=40)
+                docx_base = os.path.splitext(os.path.basename(docx_path))[0]
+                produced_pdf = os.path.join(out_dir, f"{docx_base}.pdf")
+                if os.path.exists(produced_pdf) and os.path.abspath(produced_pdf) != os.path.abspath(pdf_path):
+                    shutil.move(produced_pdf, pdf_path)
+                return
         except Exception:
             pass
 
