@@ -56,10 +56,8 @@ async def lifespan(app: FastAPI):
     cfg = load_telegram_credentials()
     token = os.environ.get("TELEGRAM_BOT_TOKEN") or cfg.get("bot_token", "").strip()
 
-    # Determine public URL for Webhook
-    render_url = os.environ.get("RENDER_EXTERNAL_URL")
-    render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
-    public_url = render_url or (f"https://{render_host}" if render_host else None) or "https://ncrp-cyber-investigation-bot.onrender.com"
+    # Strictly lock the webhook to the single canonical Render service to eliminate webhook flapping
+    public_url = os.environ.get("CANONICAL_WEBHOOK_URL", "https://ncrp-cyber-investigation-bot.onrender.com")
 
     log_event(f"Initializing Telegram Bot Service with token: {token[:8]}...{token[-4:] if len(token) > 12 else ''}")
 
