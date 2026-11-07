@@ -462,7 +462,9 @@ def execute_pipeline_sync(
     email_settings: Optional[Dict[str, Any]] = None,
     io_rank: Optional[str] = None,
     io_mobile: Optional[str] = None,
-    same_notice_number: bool = True
+    same_notice_number: bool = True,
+    suspect_mobiles: Optional[List[str]] = None,
+    imei_list: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """Synchronous pipeline runner wrapped with COM apartment initialization."""
     try:
@@ -500,8 +502,8 @@ def execute_pipeline_sync(
             notice_type=notice_type,
             max_layer=max_layer,
             same_notice_number=same_notice_number,
-            suspect_mobiles=session.get("suspect_mobiles", []),
-            imei_list=session.get("imei_list", [])
+            suspect_mobiles=suspect_mobiles or [],
+            imei_list=imei_list or []
         )
 
         ack = res.get("acknowledgement_no") or res.get("case_meta", {}).get("acknowledgement_no", "")
@@ -1988,7 +1990,9 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
         email_settings,
         io_rank,
         io_mobile,
-        same_notice_no
+        same_notice_no,
+        session.get("suspect_mobiles", []),
+        session.get("imei_list", [])
     )
 
     if not res.get("success"):
