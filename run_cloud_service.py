@@ -70,11 +70,11 @@ async def lifespan(app: FastAPI):
         webhook_url = f"{public_url.rstrip('/')}/telegram/webhook"
         log_event(f"Configuring Telegram Webhook: {webhook_url}")
 
-        # Drop pending updates to clear any stale conflicting queries immediately
+        # Preserve pending updates during restarts so officer messages are never lost
         wh_success = await TG_APP.bot.set_webhook(
             url=webhook_url,
             allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True
+            drop_pending_updates=False
         )
         if wh_success:
             IS_WEBHOOK_ACTIVE = True
@@ -111,6 +111,11 @@ async def telegram_webhook(request: Request):
         return Response(status_code=503)
     try:
         data = await request.json()
+        u_id = data.get("update_id")
+        from_u = data.get("message", {}).get("from", {}) or data.get("callback_query", {}).get("from", {})
+        txt = data.get("message", {}).get("text") or data.get("callback_query", {}).get("data") or ("document" if data.get("message", {}).get("document") else "media")
+        log_event(f"📩 Webhook update #{u_id} from {from_u.get('id')} ({from_u.get('first_name')}): {txt}")
+
         update = Update.de_json(data, TG_APP.bot)
         # Process update asynchronously in the event loop
         await TG_APP.process_update(update)
