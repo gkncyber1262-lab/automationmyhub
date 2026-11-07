@@ -614,6 +614,99 @@ class NCRPUnifiedAgent:
             return from_dt.strftime('%d/%m/%Y %I:%M %p'), to_dt.strftime('%d/%m/%Y %I:%M %p')
         return s, s
 
+    def _structure_atm_withdrawals(self, atm_withdrawals_raw: list) -> list:
+        """
+        Accurately parses NCRP ATM Cash Withdrawal rows.
+        Extracts real ATM ID, location, specific withdrawal amount, transaction date/time, and +/- 5 minute window.
+        """
+        atm_structured = []
+        for r in atm_withdrawals_raw:
+            if not r or not any(r):
+                continue
+            r_str = [re.sub(r'\s+', ' ', str(c or '')).strip() for c in r]
+            s_no = r_str[0] if len(r_str) > 0 else '1'
+
+            # Date & Time (look for dd/mm/yyyy hh:mm:ss)
+            dt_raw = ''
+            for c in r_str:
+                m_dt = re.search(r'(\d{1,2}/\d{1,2}/\d{2,4}\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)', c, re.IGNORECASE)
+                if m_dt:
+                    dt_raw = m_dt.group(1).strip()
+                    break
+
+            # Amount: Look for Withdrawn Amount (index 4 or index 3, or regex decimal amount)
+            amt = '0.00'
+            if len(r_str) > 4 and re.search(r'^\d[\d,]*\.\d{2}$', r_str[4].strip()):
+                amt = r_str[4].strip()
+            elif len(r_str) > 3 and re.search(r'^\d[\d,]*\.\d{2}$', r_str[3].strip()):
+                amt = r_str[3].strip()
+            else:
+                for c in r_str:
+                    m_a = re.search(r'\b(\d[\d,]*\.\d{2})\b', c)
+                    if m_a and float(m_a.group(1).replace(',', '')) > 0:
+                        amt = m_a.group(1)
+                        break
+
+            # Account Number & Txn ID
+            acc = ''
+            txn_id = ''
+            if len(r_str) > 1:
+                nums = re.findall(r'\b\d{9,22}\b', r_str[1])
+                if nums:
+                    acc = nums[0]
+                    if len(nums) > 1:
+                        txn_id = nums[1]
+            if not acc:
+                for c in r_str:
+                    nums = re.findall(r'\b\d{9,18}\b', c)
+                    if nums:
+                        acc = nums[0]
+                        break
+
+            # ATM ID and Location
+            full_text = ' '.join(r_str)
+            atm_id = ''
+            loc = ''
+            m_atm = re.search(r'ATM\s*ID\s*[:-]+\s*([A-Za-z0-9_-]+)', full_text, re.IGNORECASE)
+            if m_atm:
+                atm_id = m_atm.group(1).strip()
+            elif len(r_str) > 5 and 'ATMD/' in r_str[5]:
+                parts = r_str[5].split('/')
+                if len(parts) > 1 and parts[1].strip():
+                    atm_id = parts[1].strip()
+
+            m_loc = re.search(r'Place\s*of\s*ATM\s*[:-]+\s*(.*?)(?:ATM\s*ID|$)', full_text, re.IGNORECASE)
+            if m_loc:
+                loc = m_loc.group(1).strip()
+            elif len(r_str) > 6:
+                loc = r_str[6].strip()
+
+            # Bank Name
+            bank = ''
+            if len(r_str) > 7:
+                bank = re.sub(r'[\uf19c\uf19d\uf000-\uffff]', '', r_str[7]).strip()
+            if not bank:
+                for c in r_str:
+                    if 'bank' in c.lower():
+                        bank = re.sub(r'[\uf19c\uf19d\uf000-\uffff]', '', c).strip()
+                        break
+
+            from_5m, to_5m = self.calculate_time_window(dt_raw, 5)
+            atm_structured.append({
+                "s_no": s_no,
+                "account_no": acc,
+                "txn_id": txn_id,
+                "withdrawal_dt": dt_raw,
+                "amount": amt,
+                "atm_id": atm_id or 'UNKNOWN_ATM',
+                "location": loc,
+                "remarks": r_str[5] if len(r_str) > 5 else '',
+                "bank": bank or 'Concerned Bank / ATM Nodal Officer',
+                "from_time_5m": from_5m,
+                "to_time_5m": to_5m
+            })
+        return atm_structured
+
     def parse_ncrp_pdf(self, pdf_path: str, case_dir: str) -> Dict[str, Any]:
 
         if not os.path.exists(pdf_path):
@@ -867,51 +960,7 @@ class NCRPUnifiedAgent:
 
 
         # Structure ATM and Cheque Withdrawals with Time Windows (-5m/+5m and -30m/+30m)
-        atm_structured = []
-        for r in atm_withdrawals_raw:
-            if not r or not any(r): continue
-            r_c = [re.sub(r'\s+', ' ', str(c or '')).strip() for c in r]
-            if len(r_c) >= 10:
-                s_no = r_c[0]
-                amt = r_c[1]
-                acc = re.sub(r'[^0-9]', '', r_c[2])
-                dt_raw = r_c[3]
-                atm_id = r_c[5]
-                loc = r_c[6]
-                rem = r_c[7]
-                bank = r_c[8]
-            else:
-                s_no = r_c[0] if len(r_c) > 0 else '1'
-                acc = ''
-                for c in r_c:
-                    c_num = re.sub(r'[^0-9]', '', c)
-                    if 9 <= len(c_num) <= 18:
-                        acc = c_num
-                        break
-                dt_raw = ''
-                for c in r_c:
-                    if re.search(r'\d{1,2}/\d{1,2}/\d{2,4}', c):
-                        dt_raw = c
-                        break
-                amt = r_c[1] if len(r_c) > 1 else '0.00'
-                atm_id = r_c[5] if len(r_c) > 5 else ''
-                loc = r_c[6] if len(r_c) > 6 else ''
-                rem = r_c[7] if len(r_c) > 7 else ''
-                bank = r_c[8] if len(r_c) > 8 else (r_c[-2] if len(r_c) >= 2 else '')
-
-            from_5m, to_5m = self.calculate_time_window(dt_raw, 5)
-            atm_structured.append({
-                "s_no": s_no,
-                "account_no": acc,
-                "withdrawal_dt": dt_raw,
-                "amount": amt,
-                "atm_id": atm_id,
-                "location": loc,
-                "remarks": rem,
-                "bank": bank,
-                "from_time_5m": from_5m,
-                "to_time_5m": to_5m
-            })
+        atm_structured = self._structure_atm_withdrawals(atm_withdrawals_raw)
 
         case_context = {
 
@@ -1508,51 +1557,7 @@ class NCRPUnifiedAgent:
 
 
         # Structure ATM and Cheque Withdrawals with Time Windows (-5m/+5m and -30m/+30m)
-        atm_structured = []
-        for r in atm_withdrawals_raw:
-            if not r or not any(r): continue
-            r_c = [re.sub(r'\s+', ' ', str(c or '')).strip() for c in r]
-            if len(r_c) >= 10:
-                s_no = r_c[0]
-                amt = r_c[1]
-                acc = re.sub(r'[^0-9]', '', r_c[2])
-                dt_raw = r_c[3]
-                atm_id = r_c[5]
-                loc = r_c[6]
-                rem = r_c[7]
-                bank = r_c[8]
-            else:
-                s_no = r_c[0] if len(r_c) > 0 else '1'
-                acc = ''
-                for c in r_c:
-                    c_num = re.sub(r'[^0-9]', '', c)
-                    if 9 <= len(c_num) <= 18:
-                        acc = c_num
-                        break
-                dt_raw = ''
-                for c in r_c:
-                    if re.search(r'\d{1,2}/\d{1,2}/\d{2,4}', c):
-                        dt_raw = c
-                        break
-                amt = r_c[1] if len(r_c) > 1 else '0.00'
-                atm_id = r_c[5] if len(r_c) > 5 else ''
-                loc = r_c[6] if len(r_c) > 6 else ''
-                rem = r_c[7] if len(r_c) > 7 else ''
-                bank = r_c[8] if len(r_c) > 8 else (r_c[-2] if len(r_c) >= 2 else '')
-
-            from_5m, to_5m = self.calculate_time_window(dt_raw, 5)
-            atm_structured.append({
-                "s_no": s_no,
-                "account_no": acc,
-                "withdrawal_dt": dt_raw,
-                "amount": amt,
-                "atm_id": atm_id,
-                "location": loc,
-                "remarks": rem,
-                "bank": bank,
-                "from_time_5m": from_5m,
-                "to_time_5m": to_5m
-            })
+        atm_structured = self._structure_atm_withdrawals(atm_withdrawals_raw)
 
         case_context = {
 
@@ -2671,23 +2676,12 @@ class NCRPUnifiedAgent:
 
 
 
-        grouped = df.groupby(['Bank/FIs', 'Account No']).agg({
-
-            'Layer': lambda x: f"Layer {min(int(str(v).replace('Layer','').strip()) for v in x if str(v).strip().isdigit() or 'Layer' in str(v))}" if any(x) else "Layer 1",
-
-            'Ifsc Code': lambda x: str(list(x)[0]).strip().upper(),
-
-            'Disputed_Float': 'sum',
-
-            'Transaction ID / UTR Number': lambda x: ', '.join(sorted(set(str(v).strip() for v in x if v and str(v).strip() != 'None')))
-
-        }).reset_index()
-
-
-
-        grouped = grouped.sort_values(by=['Bank/FIs', 'Layer', 'Account No'])
-
-        unique_banks = list(grouped['Bank/FIs'].unique())
+        # Keep individual transaction rows so each UTR displays its exact specific amount (do not sum up across UTRs)
+        df_txns = df.copy()
+        df_txns['Ifsc Code'] = df_txns['Ifsc Code'].astype(str).str.strip().str.upper()
+        df_txns['Transaction ID / UTR Number'] = df_txns['Transaction ID / UTR Number'].astype(str).str.strip()
+        df_txns = df_txns.sort_values(by=['Bank/FIs', 'Layer_Num', 'Account No'])
+        unique_banks = list(df_txns['Bank/FIs'].unique())
 
         print(f"\n[Module 3 - Bank Notices] Generating Section 94 BNSS Notices for {len(unique_banks)} Banks/FIs (Layer 1 to 5)...")
 
@@ -2721,7 +2715,7 @@ class NCRPUnifiedAgent:
 
 
 
-        for idx, (bank_name, b_group) in enumerate(grouped.groupby('Bank/FIs'), start=1):
+        for idx, (bank_name, b_group) in enumerate(df_txns.groupby('Bank/FIs', sort=False), start=1):
 
             if single_bank_only and idx > 1:
 
@@ -3010,32 +3004,7 @@ class NCRPUnifiedAgent:
 
 
 
-            tot_r = tbl1.add_row()
-
-            tot_r.cells[0].merge(tot_r.cells[4])
-
-            p_tr = tot_r.cells[0].paragraphs[0]
-
-            p_tr.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-
-            r_tl = p_tr.add_run('TOTAL DISPUTED AMOUNT:')
-
-            set_font(r_tl, size=8.5, bold=True)
-
-            tot_r.cells[5].merge(tot_r.cells[6])
-
-            p_ta = tot_r.cells[5].paragraphs[0]
-
-            p_ta.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-
-            r_ta = p_ta.add_run(f"Rs. {tot_disp:,.2f}")
-
-            set_font(r_ta, size=8.5, bold=True)
-
-
-
-            # Requisition Points (Increased font size)
-
+            # Total Disputed Amount row removed as requested by user - each row shows individual UTR amount
             p_rh = doc.add_paragraph()
 
             p_rh.paragraph_format.space_before = Pt(3)
@@ -3054,7 +3023,7 @@ class NCRPUnifiedAgent:
                 f'3. Provide complete certified account statement of above alleged account/s from 01.01.2025 to {comp_date} with complete transaction narrations.',
                 '4. Please Provide (if any) changed/updated linked Mobile numbers and Email IDs of the alleged Bank Account/s.',
                 '5. Kindly provide concerned Branch Manager Contact No., Name and Official Email ID.',
-                '6. Kindly provide IP login details and logout details (along with timestamp, Public IP address, Port no., and Device ID) of Net/Mobile Banking for the alleged account(s) from 5 days prior to transaction till 5 days after.'
+                '6. Kindly provide IP login details and logout details (along with timestamp, Public IP address, Port no., and Device ID) of Net/Mobile Banking for the alleged account(s).'
             ]
 
             for p_text in pts:
@@ -3430,18 +3399,7 @@ class NCRPUnifiedAgent:
                     set_font(run_c, size=7.5)
 
             # Total row
-            tot_r = tbl_atm.add_row()
-            tot_r.cells[0].merge(tot_r.cells[5])
-            p_tr = tot_r.cells[0].paragraphs[0]
-            p_tr.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            r_tl = p_tr.add_run('TOTAL CASH WITHDRAWN:')
-            set_font(r_tl, size=8.0, bold=True)
-            p_ta = tot_r.cells[6].paragraphs[0]
-            p_ta.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            r_ta = p_ta.add_run(f"Rs. {tot_atm_amt:,.2f}")
-            set_font(r_ta, size=8.0, bold=True)
-
-            # REQUISITION POINTS: Placed AFTER the table
+            # Total Cash Withdrawn row removed as requested by user - each row shows individual withdrawn amount
             p_ar = doc.add_paragraph()
             p_ar.paragraph_format.space_before = Pt(3)
             p_ar.paragraph_format.space_after = Pt(2)
@@ -3609,22 +3567,12 @@ class NCRPUnifiedAgent:
 
 
 
-        grouped = df.groupby(['Bank/FIs', 'Account No']).agg({
-
-            'Layer': lambda x: f"Layer {min(int(str(v).replace('Layer','').strip()) for v in x if str(v).strip().isdigit() or 'Layer' in str(v))}" if any(x) else "Layer 1",
-
-            'Ifsc Code': lambda x: str(list(x)[0]).strip().upper(),
-
-            'Disputed_Float': 'sum',
-
-            'Transaction ID / UTR Number': lambda x: ', '.join(sorted(set(str(v).strip() for v in x if v and str(v).strip() != 'None')))
-
-        }).reset_index()
-
-
-
-        grouped = grouped.sort_values(by=['Layer', 'Bank/FIs', 'Account No'])
-
+        # Keep individual transaction rows so each UTR displays its exact specific amount (do not sum up across UTRs)
+        df_txns = df.copy()
+        df_txns['Ifsc Code'] = df_txns['Ifsc Code'].astype(str).str.strip().str.upper()
+        df_txns['Transaction ID / UTR Number'] = df_txns['Transaction ID / UTR Number'].astype(str).str.strip()
+        df_txns = df_txns.sort_values(by=['Bank/FIs', 'Layer_Num', 'Account No'])
+        grouped = df_txns
         unique_banks = sorted(grouped['Bank/FIs'].unique().tolist())
 
         bank_list_str = ", ".join(unique_banks)
@@ -3861,7 +3809,7 @@ class NCRPUnifiedAgent:
 
         tot_disp = 0.0
 
-        for _, r_data in grouped.iterrows():
+        for _, r_data in df_txns.iterrows():
 
             tot_disp += r_data['Disputed_Float']
 
@@ -3899,30 +3847,7 @@ class NCRPUnifiedAgent:
 
 
 
-        tot_r = tbl1.add_row()
-
-        tot_r.cells[0].merge(tot_r.cells[4])
-
-        p_tr = tot_r.cells[0].paragraphs[0]
-
-        p_tr.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-
-        r_tl = p_tr.add_run('TOTAL DISPUTED AMOUNT:')
-
-        set_font(r_tl, size=8.0, bold=True)
-
-        tot_r.cells[5].merge(tot_r.cells[6])
-
-        p_ta = tot_r.cells[5].paragraphs[0]
-
-        p_ta.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-
-        r_ta = p_ta.add_run(f"Rs. {tot_disp:,.2f}")
-
-        set_font(r_ta, size=8.0, bold=True)
-
-
-
+        # Total Disputed Amount row removed as requested by user - each row shows individual UTR amount
         p_rh = doc.add_paragraph()
 
         p_rh.paragraph_format.space_before = Pt(2)
@@ -3947,7 +3872,7 @@ class NCRPUnifiedAgent:
 
             '5. Kindly provide concerned Branch Manager Contact No., Name and Official Email ID.',
 
-            '6. Kindly provide IP login details and logout details (along with timestamp, Public IP address, Port no., and Device ID) of Net/Mobile Banking for the alleged account(s) from 5 days prior to transaction till 5 days after.'
+            '6. Kindly provide IP login details and logout details (along with timestamp, Public IP address, Port no., and Device ID) of Net/Mobile Banking for the alleged account(s).'
 
         ]
 
@@ -5798,6 +5723,11 @@ class NCRPUnifiedAgent:
         fir_date = case_meta.get("fir_date", "")
 
         fir_sections = case_meta.get("fir_sections", "318(4) BNS")
+        # Remove any 66B / 66D IT Act reference from Case Diary as requested by user
+        cd_sections = re.sub(r'[\s,&+]+66[A-Za-z]?\s*IT\s*Act', '', str(fir_sections), flags=re.IGNORECASE).strip()
+        cd_sections = re.sub(r'[\s,&+]+IT\s*Act.*', '', cd_sections, flags=re.IGNORECASE).strip()
+        if not cd_sections:
+            cd_sections = "318(4) BNS"
 
         ack_no = case_meta.get("acknowledgement_no", "")
 
@@ -6047,7 +5977,7 @@ class NCRPUnifiedAgent:
 
             cell.paragraphs[8].text = f"Dated &Place of Occurrence: ..As per FIR…        Investigation Officer:   {io_display}"
 
-            cell.paragraphs[9].text = f"Offence:…U/s  {fir_sections}                                  Complainant:..  {comp_name}…......"
+            cell.paragraphs[9].text = f"Offence:…U/s  {cd_sections}                                  Complainant:..  {comp_name}…......"
 
             cell.paragraphs[10].text = "Property involved and received "
 
@@ -6611,7 +6541,8 @@ class NCRPUnifiedAgent:
 
         sign_mode: str = "unsigned",
         notice_type: str = "both",
-        max_layer: int = 5
+        max_layer: int = 5,
+        same_notice_number: bool = True
 
     ) -> Dict[str, Any]:
 
@@ -6734,6 +6665,7 @@ class NCRPUnifiedAgent:
             ctx["case_meta"]["case_type"] = "ack"
 
             ctx["case_meta"]["case_reference"] = f"ACK No. {ctx['case_meta']['acknowledgement_no']}"
+        ctx["case_meta"]["same_notice_number"] = same_notice_number
 
 
 
@@ -7242,6 +7174,7 @@ def interactive_interview(agent: NCRPUnifiedAgent):
     else:
         ctx["case_meta"]["case_type"] = "ack"
         ctx["case_meta"]["case_reference"] = f"ACK No. {ctx['case_meta']['acknowledgement_no']}"
+        ctx["case_meta"]["same_notice_number"] = same_notice_number
 
     ctx["case_meta"]["io_name"] = io_name
     ctx["case_meta"]["io_rank"] = io_rank

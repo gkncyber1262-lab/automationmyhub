@@ -461,7 +461,8 @@ def execute_pipeline_sync(
     max_layer: int = 5,
     email_settings: Optional[Dict[str, Any]] = None,
     io_rank: Optional[str] = None,
-    io_mobile: Optional[str] = None
+    io_mobile: Optional[str] = None,
+    same_notice_number: bool = True
 ) -> Dict[str, Any]:
     """Synchronous pipeline runner wrapped with COM apartment initialization."""
     try:
@@ -497,7 +498,8 @@ def execute_pipeline_sync(
             notice_date_override=n_date,
             sign_mode="both",
             notice_type=notice_type,
-            max_layer=max_layer
+            max_layer=max_layer,
+            same_notice_number=same_notice_number
         )
 
         ack = res.get("acknowledgement_no") or res.get("case_meta", {}).get("acknowledgement_no", "")
@@ -667,15 +669,37 @@ async def prompt_layer_selection(target_ui, session: Dict[str, Any]):
         await target_ui.reply_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
 
 
-async def prompt_notice_no_selection(target_ui, session: Dict[str, Any]):
-    """Prompts for Starting Notice Number."""
-    session["state"] = "awaiting_notice_no"
+async def prompt_notice_scheme_selection(target_ui, session: Dict[str, Any]):
+    """[Step 6a] Prompts user whether to keep the SAME notice number for all notices or use sequential numbers."""
+    session["state"] = "awaiting_notice_scheme"
     max_l = session.get("max_layer", 999)
     layer_desc = "सभी लेयर्स (1-5+)" if max_l >= 900 else f"लेयर {max_l} तक"
 
     msg_text = (
         f"✅ चयनित लेयर रेंज: *{layer_desc}*\n\n"
-        f"🔢 *[सवाल 6] शुरुआती नोटिस नंबर (Starting Notice No.):*\n"
+        f"🔢 *[सवाल 6a] नोटिस नंबरिंग का तरीका चुनें:*\n\n"
+        f"क्या केस/FIR के सभी नोटिसों पर एक ही नोटिस नंबर रखना है या प्रत्येक नोटिस पर अलग-अलग क्रमिक नंबर (5744, 5745...) लगाना है?"
+    )
+    keyboard = [
+        [InlineKeyboardButton("📋 सभी नोटिसों पर एक ही नंबर रखें (Same Notice Number) [Default]", callback_data="nscheme:same")],
+        [InlineKeyboardButton("🔢 प्रत्येक नोटिस पर अलग-अलग क्रमिक नंबर लगाएं (Sequential Numbers)", callback_data="nscheme:seq")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    if hasattr(target_ui, "edit_message_text"):
+        await target_ui.edit_message_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+    else:
+        await target_ui.reply_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+
+
+async def prompt_notice_no_selection(target_ui, session: Dict[str, Any]):
+    """[Step 6b] Prompts for Starting Notice Number."""
+    session["state"] = "awaiting_notice_no"
+    same_no = session.get("same_notice_number", True)
+    scheme_desc = "सभी नोटिसों पर एक ही नंबर" if same_no else "अलग-अलग क्रमिक नंबर"
+
+    msg_text = (
+        f"✅ चयनित नंबरिंग मोड: *{scheme_desc}*\n\n"
+        f"🔢 *[सवाल 6b] शुरुआती नोटिस नंबर (Starting Notice No.):*\n"
         f"क्या आप डिफ़ॉल्ट नोटिस नंबर *5744* रखना चाहते हैं?"
     )
     keyboard = [
@@ -1563,7 +1587,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             # For ATM only, skip layer selection and set max_layer=5
             session["max_layer"] = 5
-            await prompt_notice_no_selection(query, session)
+            await prompt_notice_scheme_selection(query, session)
         return
 
     # Step 5: Layer Limit Selection
@@ -1577,10 +1601,17 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             except:
                 max_l = 5
         session["max_layer"] = max_l
+        await prompt_notice_scheme_selection(query, session)
+        return
+
+    # Step 6a: Notice Number Scheme Selection
+    if data.startswith("nscheme:"):
+        choice = data.split(":")[1]
+        session["same_notice_number"] = (choice == "same")
         await prompt_notice_no_selection(query, session)
         return
 
-    # Step 6: Notice Number Selection
+    # Step 6b: Notice Number Selection
     if data.startswith("noticeno:"):
         val = data.split(":")[1]
         if val == "custom":
@@ -1714,7 +1745,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             "is_fir": True,
             "fir_no": fir_no_input,
             "fir_date": today_str,
-            "fir_sections": "318(4) BNS & 66D IT Act",
+            "fir_sections": "318(4) BNS",
             "police_station": "CYBER POLICE STATION NORTH DISTRICT"
         }
         await prompt_fir_date_selection(message, session)
@@ -1851,6 +1882,7 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
     except Exception:
         status_msg = await context.bot.send_message(chat_id=chat_id, text=start_banner.replace('*', ''))
 
+    same_notice_no = session.get("same_notice_number", True)
     # Launch background executor
     loop = asyncio.get_running_loop()
     res = await loop.run_in_executor(
@@ -1865,7 +1897,8 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
         max_layer,
         email_settings,
         io_rank,
-        io_mobile
+        io_mobile,
+        same_notice_no
     )
 
     if not res.get("success"):
