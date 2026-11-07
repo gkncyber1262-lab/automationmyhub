@@ -6,7 +6,7 @@
 ========================================================================================
 Architecture:
   1. Inbound Webhook:
-     - Listens on /webhook/whatsapp or /webhook/n8n for incoming WhatsApp messages/PDFs.
+     - Listens on /webhook/whatsapp for incoming WhatsApp messages/PDFs.
      - UltraMsg native webhook payload (nested 'data' with from, body, type, media).
   2. Multi-turn State Machine per Officer (Phone Number):
      - Step 0 (Start): Greet IO & prompt for NCRP Complaint PDF.
@@ -476,11 +476,10 @@ def health():
 
 
 @app.post("/webhook/whatsapp")
-@app.post("/webhook/n8n")
 async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Main webhook receiver for incoming WhatsApp messages and PDF uploads.
-    Handles UltraMsg, GreenAPI, and n8n forwarded payloads seamlessly.
+    Handles UltraMsg and GreenAPI forwarded payloads seamlessly.
     """
     try:
         body = await request.json()
