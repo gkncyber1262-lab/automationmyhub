@@ -773,18 +773,10 @@ class EmailDispatchAgent:
     # ----------------------------------------------------------------------------------
     def enforce_rate_limit(self, seconds: Optional[int] = None):
         delay = seconds if seconds is not None else self.rate_limit_seconds
-        if delay <= 0:
-            return
-
-        print(f"\n⏳ [RATE LIMIT] Pausing for {delay} seconds before next email dispatch...")
-        for remaining in range(delay, 0, -1):
-            bar = "█" * (delay - remaining + 1) + "░" * (remaining - 1)
-            sys.stdout.write(f"\r   [{bar}] Cooling down: {remaining:02d}s remaining... (15s throttle policy)")
-            sys.stdout.flush()
-            time.sleep(1)
-        sys.stdout.write("\r" + " " * 80 + "\r")
-        sys.stdout.flush()
-        print("   ✅ Cooldown complete. Ready for next dispatch.\n")
+        # Cap throttle to 1 second so officers receive fast deliveries
+        delay = min(delay, 1)
+        if delay > 0:
+            time.sleep(delay)
 
     # ----------------------------------------------------------------------------------
     # UNIFIED SEND DISPATCHER
