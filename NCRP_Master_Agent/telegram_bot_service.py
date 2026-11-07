@@ -499,7 +499,9 @@ def execute_pipeline_sync(
             sign_mode="both",
             notice_type=notice_type,
             max_layer=max_layer,
-            same_notice_number=same_notice_number
+            same_notice_number=same_notice_number,
+            suspect_mobiles=session.get("suspect_mobiles", []),
+            imei_list=session.get("imei_list", [])
         )
 
         ack = res.get("acknowledgement_no") or res.get("case_meta", {}).get("acknowledgement_no", "")
@@ -632,8 +634,8 @@ async def prompt_notice_type_selection(target_ui, session: Dict[str, Any]):
         f"आप किस प्रकार के कानूनी नोटिस तैयार करना चाहते हैं?"
     )
     keyboard = [
-        [InlineKeyboardButton("📑 दोनों (Bank व ATM CCTV दोनों) [Default]", callback_data="ntype:both")],
-        [InlineKeyboardButton("🏦 केवल बैंक नोटिस (Bank Notices Only)", callback_data="ntype:bank")],
+        [InlineKeyboardButton("🏦 बैंक नोटिस (Bank Notices Only) [Default]", callback_data="ntype:bank")],
+        [InlineKeyboardButton("📑 दोनों (Bank व ATM CCTV दोनों)", callback_data="ntype:both")],
         [InlineKeyboardButton("🏧 केवल ATM CCTV नोटिस (ATM Only)", callback_data="ntype:atm")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -727,6 +729,26 @@ async def prompt_email_selection(target_ui, session: Dict[str, Any]):
         [InlineKeyboardButton("📧 डिफ़ॉल्ट ईमेल (rajendra.28082016@delhipolice.gov.in) [Default]", callback_data="email:default")],
         [InlineKeyboardButton("✉️ अन्य ईमेल पता दर्ज करें", callback_data="email:custom")],
         [InlineKeyboardButton("⏭️ ईमेल न भेजें (केवल Telegram पर चाहिए)", callback_data="email:skip")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    if hasattr(target_ui, "edit_message_text"):
+        await target_ui.edit_message_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+    else:
+        await target_ui.reply_text(msg_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+
+
+async def prompt_cdr_selection(target_ui, session: Dict[str, Any]):
+    """[Step 8] Prompts whether IO wants to generate a Telecom CDR Requisition Letter for Suspect Mobile/IMEI."""
+    session["state"] = "awaiting_cdr_choice"
+    msg_text = (
+        "📱 *[सवाल 8] दूरसंचार CDR/CAF/SDR मांग पत्र (Telecom CDR Letter):*\n\n"
+        "क्या आप इस केस में किसी संदिग्ध (Suspect) मोबाइल नंबर या IMEI का वैधानिक CDR पत्र तैयार करना चाहते हैं?\n\n"
+        "🔒 *नियम:* यदि शिकायत में कोई संदिग्ध नंबर नहीं है या केवल परिवादी (Complainant) का नंबर है, "
+        "तो परिवादी के नंबर से CDR पत्र नहीं बनाया जाएगा। संदिग्ध नंबर न होने पर कृपया *'छोड़ें'* चुनें।"
+    )
+    keyboard = [
+        [InlineKeyboardButton("⏭️ छोड़ें (कोई CDR पत्र न बनाएं) [Default]", callback_data="cdr:skip")],
+        [InlineKeyboardButton("📱 सस्पेक्ट मोबाइल/IMEI व Source दर्ज करें", callback_data="cdr:add")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     if hasattr(target_ui, "edit_message_text"):
@@ -1632,15 +1654,35 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             return
         elif choice == "skip":
             session["email_settings"] = {"send_email": False, "target_email": None}
-            await query.edit_message_text("ℹ️ *ईमेल ऑटोमेशन छोड़ा गया (केवल Telegram पर नोटिस प्राप्त होंगे)।*", parse_mode=ParseMode.MARKDOWN)
-            await trigger_execution_telegram(query.message, chat_id, session, context)
+            await prompt_cdr_selection(query.message, session)
             return
         else:
             session["email_settings"] = {"send_email": True, "target_email": "rajendra.28082016@delhipolice.gov.in"}
-            await query.edit_message_text("✅ *ईमेल ऑटोमेशन: rajendra.28082016@delhipolice.gov.in पर निर्धारित।*", parse_mode=ParseMode.MARKDOWN)
-            await trigger_execution_telegram(query.message, chat_id, session, context)
+            await prompt_cdr_selection(query.message, session)
             return
 
+
+
+    # Step 8: CDR Selection Callback
+    if data.startswith("cdr:"):
+        choice = data.split(":")[1]
+        if choice == "add":
+            session["state"] = "awaiting_cdr_input"
+            req_msg = (
+                "📝 *कृपया संदिग्ध (Suspect) का 10-अंकीय मोबाइल नंबर या 15-अंकीय IMEI तथा उसका स्रोत (Source) भेजें:*\n\n"
+                "उदा: `9876543210, Complainant WhatsApp interaction`\n"
+                "या: `861234567890123, Mobile used by suspect`\n\n"
+                "*(नोट: एक से अधिक नंबर हों तो अलग-अलग पंक्तियों में लिखें, या रद्द करने हेतु `skip` भेजें)*"
+            )
+            await query.edit_message_text(req_msg, parse_mode=ParseMode.MARKDOWN)
+            return
+        else: # skip
+            session["suspect_mobiles"] = []
+            session["imei_list"] = []
+            session["suspect_sources"] = {}
+            await query.edit_message_text("⏭️ *सीडीआर पत्र छोड़ा गया (केवल बैंक नोटिस तैयार किए जाएंगे)।*", parse_mode=ParseMode.MARKDOWN)
+            await trigger_execution_telegram(query.message, chat_id, session, context)
+            return
 
 # ========================================================================================
 # TEXT MESSAGE HANDLER (FOR MANUAL TYPING & INPUTS)
@@ -1807,8 +1849,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     if current_state == "awaiting_email_choice":
         if text.strip().lower() in ["3", "no", "n", "nahi", "skip"]:
             session["email_settings"] = {"send_email": False, "target_email": None}
-            await message.reply_text("ℹ️ *ईमेल ऑटोमेशन छोड़ा गया (केवल Telegram पर नोटिस प्राप्त होंगे)।*", parse_mode=ParseMode.MARKDOWN)
-            await trigger_execution_telegram(message, chat_id, session, context)
+            await prompt_cdr_selection(message, session)
             return
         elif text.strip().lower() in ["2", "custom", "other"]:
             session["state"] = "awaiting_custom_email"
@@ -1816,7 +1857,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         else:
             session["email_settings"] = {"send_email": True, "target_email": "rajendra.28082016@delhipolice.gov.in"}
-            await trigger_execution_telegram(message, chat_id, session, context)
+            await prompt_cdr_selection(message, session)
             return
 
     # State: Awaiting Custom Email
@@ -1824,11 +1865,60 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         custom_mail = text.strip()
         if "@" in custom_mail and "." in custom_mail:
             session["email_settings"] = {"send_email": True, "target_email": custom_mail}
-            await trigger_execution_telegram(message, chat_id, session, context)
+            await prompt_cdr_selection(message, session)
             return
         else:
             await message.reply_text("⚠️ अमान्य ईमेल पता! कृपया सही ईमेल दर्ज करें (उदा. officer@gmail.com):")
             return
+
+    # State: Awaiting CDR Input
+    if current_state == "awaiting_cdr_input":
+        if text.strip().lower() in ["skip", "no", "nahi", "n", "cancel"]:
+            session["suspect_mobiles"] = []
+            session["imei_list"] = []
+            session["suspect_sources"] = {}
+            await message.reply_text("⏭️ *सीडीआर पत्र छोड़ा गया।*", parse_mode=ParseMode.MARKDOWN)
+            await trigger_execution_telegram(message, chat_id, session, context)
+            return
+
+        mobiles = []
+        imeis = []
+        sources = {}
+
+        lines = text.split("\n")
+        for line in lines:
+            line_str = line.strip()
+            if not line_str:
+                continue
+            parts = [p.strip() for p in line_str.replace(" - ", ",").replace("-", ",").split(",") if p.strip()]
+            num_part = parts[0] if parts else ""
+            src_part = parts[1] if len(parts) > 1 else "Provided by IO during investigation"
+
+            m_mob = re.search(r'\b([6-9]\d{9})\b', num_part)
+            m_imei = re.search(r'\b(\d{15})\b', num_part)
+
+            if m_mob:
+                m_num = m_mob.group(1)
+                mobiles.append(m_num)
+                sources[m_num] = src_part
+            elif m_imei:
+                im_num = m_imei.group(1)
+                imeis.append(im_num)
+                sources[im_num] = src_part
+            elif len(num_part) >= 10:
+                mobiles.append(num_part)
+                sources[num_part] = src_part
+
+        if not mobiles and not imeis:
+            await message.reply_text("⚠️ कोई वैध 10-अंकीय मोबाइल नंबर या IMEI नहीं मिला! कृपया पुनः प्रयास करें या `skip` भेजें:")
+            return
+
+        session["suspect_mobiles"] = mobiles
+        session["imei_list"] = imeis
+        session["suspect_sources"] = sources
+        await message.reply_text(f"✅ *सस्पेक्ट नंबर दर्ज:* {len(mobiles)} मोबाइल, {len(imeis)} IMEI\n🚀 अब केस पाइपलाइन प्रारंभ की जा रही है...", parse_mode=ParseMode.MARKDOWN)
+        await trigger_execution_telegram(message, chat_id, session, context)
+        return
 
     # Fallback default
     if session.get("pdf_path"):
@@ -2060,6 +2150,23 @@ async def dispatch_case_files(
                 chat_id=chat_id,
                 file_path=html_candidates[0],
                 caption="🌐 *3D मूवेबल इंटरएक्टिव मनी ट्रेल विजुअलाइज़र (HTML File)*\n(इसे किसी भी ब्राउज़र में खोलकर नोड्स को 3D में मूव/ड्रैग व ज़ूम करें)",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            await asyncio.sleep(1.5)
+
+        # 3d. DELIVER FORENSIC MONEY TRAIL PRESENTATION DOCX (PPT-style for case/court file)
+        ppt_candidates = (
+            glob.glob(os.path.join(case_dir, 'Forensic_Money_Trail_Presentation*.docx')) or
+            glob.glob(os.path.join(case_dir, 'Notice_DOCX_Files', 'Forensic_Money_Trail_Presentation*.docx'))
+        )
+        if ppt_candidates:
+            ppt_docx = ppt_candidates[0]
+            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+            await safe_send_document(
+                bot=bot,
+                chat_id=chat_id,
+                file_path=ppt_docx,
+                caption='📑 *मनी ट्रेल प्रेजेंटेशन रिपोर्ट (PPT-Style Forensic Report DOCX)*\nकेस/कोर्ट फाइल में लगाने हेतु तैयार स्टेप-बाई-स्टेप मनी ट्रेल प्रेजेंटेशन (विक्टिम से फर्स्ट लेयर व आगे की लेयर्स का पूर्ण विवरण)।',
                 parse_mode=ParseMode.MARKDOWN
             )
             await asyncio.sleep(1.5)

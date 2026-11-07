@@ -230,5 +230,23 @@
     "address": "1 BY 100 SHRADHHA PURIKANKAR KHERA,MEERUT CANTT ,PIN - 250001",
     "city": "MEERUT",
     "state": "UTTAR PRADESH"
+  },
+  "CBIN0280797": {
+    "branch": "BRANCH",
+    "address": "VIVEK COMPLEX, VIJAY MARG SANGAM CHOWK AMBIKAPUR",
+    "city": "SURGUJA",
+    "state": "CHHATTISGARH"
+  },
+  "PSIB0021685": {
+    "branch": "AMBIKAPUR",
+    "address": "ANAMIKA COMPLEX,BESIDE TRIPATHI ENTERPRISES,CHANDANI CHOWK,RING ROAD,AMBIKAPUR,DIST SURGUJA,C.G.",
+    "city": "SURGUJA",
+    "state": "CHHATTISGARH"
+  },
+  "UBIN0555461": {
+    "branch": "AMBIKAPUR",
+    "address": "DEVIGANJ ROAD, POST AMBIKAPUR,DIST. SARGUJA, CHHATTISGARH - 497 001.",
+    "city": "SURGUJA",
+    "state": "CHHATTISGARH"
   }
 }

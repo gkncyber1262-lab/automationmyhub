@@ -307,6 +307,21 @@ def create_dynamic_html_visualizer(ctx: dict, output_html: str):
         let lastMouseX = 0;
         let lastMouseY = 0;
         let particlesActive = true;
+        // Helper to format currency into compact representations (e.g. 10k, 1.5k, 1L)
+        function formatShortAmount(amtStr) {{
+            if (!amtStr) return '';
+            let raw = String(amtStr).replace(/[^0-9.]/g, '');
+            let val = parseFloat(raw);
+            if (isNaN(val) || val <= 0) return amtStr;
+            if (val >= 10000000) return '₹' + (val / 10000000).toFixed(1) + 'Cr';
+            if (val >= 100000) return '₹' + (val / 100000).toFixed(1) + 'L';
+            if (val >= 1000) {{
+                let kVal = val / 1000;
+                return '₹' + (kVal % 1 === 0 ? kVal.toFixed(0) : kVal.toFixed(1)) + 'K';
+            }}
+            return '₹' + val.toFixed(0);
+        }}
+
 
         // Position nodes in a 3D layered hierarchy
         const layerXMap = {{
@@ -329,7 +344,7 @@ def create_dynamic_html_visualizer(ctx: dict, output_html: str):
             const spacing = 190;
             const startY = -((arr.length - 1) * spacing) / 2;
             arr.forEach((n, idx) => {{
-                n.x = layerXMap[l] || 0;
+                n.x = getLayerX(l);
                 n.y = startY + idx * spacing;
                 n.z = (Math.sin(idx * 1.5) * 60) + (l * 20); // 3D depth curvature
             }});
@@ -461,13 +476,29 @@ def create_dynamic_html_visualizer(ctx: dict, output_html: str):
                     const by = Math.pow(1-t, 3)*p1.y + 3*Math.pow(1-t, 2)*t*cy1 + 3*(1-t)*Math.pow(t, 2)*cy2 + Math.pow(t, 3)*p2.y;
 
                     const curScale = (p1.scale + (p2.scale - p1.scale) * t);
-                    ctx.fillStyle = '#00f0ff';
+                    const amtLabel = formatShortAmount(pt.link.amount || '');
+
+                    // Floating Glowing Amount Badge along Money Trail
+                    ctx.font = 'bold ' + Math.max(9, Math.round(11 * curScale)) + 'px Segoe UI, Arial';
+                    const txtW = ctx.measureText(amtLabel).width;
+                    const bW = txtW + (14 * curScale);
+                    const bH = 18 * curScale;
+
                     ctx.shadowColor = '#00f0ff';
-                    ctx.shadowBlur = 10;
+                    ctx.shadowBlur = 12;
+                    ctx.fillStyle = isDark ? '#0f172a' : '#ffffff';
+                    ctx.strokeStyle = '#00e5ff';
+                    ctx.lineWidth = 1.5 * curScale;
                     ctx.beginPath();
-                    ctx.arc(bx, by, 4 * curScale, 0, Math.PI * 2);
+                    ctx.roundRect(bx - bW / 2, by - bH / 2, bW, bH, bH / 2);
                     ctx.fill();
+                    ctx.stroke();
                     ctx.shadowBlur = 0;
+
+                    ctx.fillStyle = isDark ? '#38bdf8' : '#0369a1';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(amtLabel, bx, by);
                 }});
             }}
 

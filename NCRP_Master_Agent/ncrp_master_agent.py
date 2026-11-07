@@ -2193,8 +2193,8 @@ class NCRPUnifiedAgent:
 
 
         if not all_items:
-
-            all_items.append(("9296960895", "Provided by Complainant"))
+            print("  [CDR Module] No suspect mobile or IMEI numbers provided. Skipping CDR requisition letter generation.")
+            return {}
 
 
 
@@ -3023,7 +3023,9 @@ class NCRPUnifiedAgent:
                 f'3. Provide complete certified account statement of above alleged account/s from 01.01.2025 to {comp_date} with complete transaction narrations.',
                 '4. Please Provide (if any) changed/updated linked Mobile numbers and Email IDs of the alleged Bank Account/s.',
                 '5. Kindly provide concerned Branch Manager Contact No., Name and Official Email ID.',
-                '6. Kindly provide IP login details and logout details (along with timestamp, Public IP address, Port no., and Device ID) of Net/Mobile Banking for the alleged account(s).'
+                '6. Kindly provide IP login details and logout details (along with timestamp, Public IP address, Port no., and Device ID) of Net/Mobile Banking for the alleged account(s).',
+                '7. Provide certified copies of PAN Card, Aadhaar Card (Masked), CKYC Identifier, and Video KYC / Biometric onboarding records along with geo-coordinates/IP at the time of account opening.',
+                '8. Provide written confirmation of Debit Freeze / Lien marked on alleged account(s) pursuant to this notice, current balance available, Certificate U/s 63 Bharatiya Sakshya Adhiniyam (BSA) for electronic records, and details of subsequent attempted transactions/withdrawals.'
             ]
 
             for p_text in pts:
@@ -3872,7 +3874,11 @@ class NCRPUnifiedAgent:
 
             '5. Kindly provide concerned Branch Manager Contact No., Name and Official Email ID.',
 
-            '6. Kindly provide IP login details and logout details (along with timestamp, Public IP address, Port no., and Device ID) of Net/Mobile Banking for the alleged account(s).'
+            '6. Kindly provide IP login details and logout details (along with timestamp, Public IP address, Port no., and Device ID) of Net/Mobile Banking for the alleged account(s).',
+
+            '7. Provide certified copies of PAN Card, Aadhaar Card (Masked), CKYC Identifier, and Video KYC / Biometric onboarding records along with geo-coordinates/IP at the time of account opening.',
+
+            '8. Provide written confirmation of Debit Freeze / Lien marked on alleged account(s) pursuant to this notice, current balance available, Certificate U/s 63 Bharatiya Sakshya Adhiniyam (BSA) for electronic records, and details of subsequent attempted transactions/withdrawals.'
 
         ]
 
@@ -4406,6 +4412,319 @@ class NCRPUnifiedAgent:
     # MODULE 4: TELECOM CDR & SDR REQUISITION (SECTION 94 BNSS)
 
     # ----------------------------------------------------------------------------------
+
+    def generate_money_trail_presentation_docx(
+        self,
+        case_context: Dict[str, Any],
+        excel_path: Optional[str],
+        output_path: str,
+        png_path: Optional[str] = None
+    ) -> str:
+        """
+        Generates a presentation/PowerPoint-style Word Document (.docx)
+        detailing the step-by-step Money Trail from Victim to Layer 1, Layer 2, Layer 3+,
+        ATM withdrawals, and embedded 3D flow diagram.
+        Designed for printing and attaching directly to court/investigation case files.
+        """
+        c_meta = case_context.get("case_meta", {})
+        comp = case_context.get("complainant", {})
+        fin = case_context.get("financial_summary", {})
+
+        ack_no = c_meta.get("acknowledgement_no", "")
+        fir_no = c_meta.get("fir_no", "")
+        fir_date = c_meta.get("fir_date", "")
+        is_fir = c_meta.get("case_type") == "fir" or bool(fir_no)
+        case_ref = f"Case FIR No. {fir_no} Dated {fir_date}" if is_fir else f"NCRP ACK No. {ack_no}"
+        io_name = c_meta.get("io_name", "Investigating Officer")
+        io_rank = c_meta.get("io_rank", "SUB INSPECTOR")
+        comp_name = comp.get("name", "Complainant")
+        v_bank = comp.get("victim_bank", "")
+        v_acc = comp.get("victim_account", "")
+        disputed_amt = fin.get("alleged_amount", "0.00")
+        lien_amt = fin.get("total_lien_amount", "0.00")
+        report_date = c_meta.get("complaint_date", datetime.datetime.now().strftime("%d/%m/%Y"))
+
+        doc = docx.Document()
+        sec = doc.sections[0]
+        sec.orientation = WD_ORIENTATION.LANDSCAPE
+        sec.page_width = Inches(11.0)
+        sec.page_height = Inches(8.5)
+        sec.left_margin = Inches(0.40)
+        sec.right_margin = Inches(0.40)
+        sec.top_margin = Inches(0.40)
+        sec.bottom_margin = Inches(0.40)
+
+        def set_font(run, name='Bookman Old Style', size=9.5, bold=False, italic=False, color=None):
+            run.font.name = name
+            run.font.size = Pt(size)
+            run.bold = bold
+            run.italic = italic
+            if color:
+                run.font.color.rgb = color
+
+        def set_cell_background(cell, fill_hex):
+            tcPr = cell._tc.get_or_add_tcPr()
+            tcPr.append(parse_xml(f'<w:shd {nsdecls("w")} w:fill="{fill_hex}"/>'))
+
+        def set_cell_margins(cell, top=100, bottom=100, left=150, right=150):
+            tcPr = cell._tc.get_or_add_tcPr()
+            tcMar = parse_xml(
+                f'<w:tcMar {nsdecls("w")}>'
+                f'  <w:top w:w="{top}" w:type="dxa"/>'
+                f'  <w:bottom w:w="{bottom}" w:type="dxa"/>'
+                f'  <w:left w:w="{left}" w:type="dxa"/>'
+                f'  <w:right w:w="{right}" w:type="dxa"/>'
+                f'</w:tcMar>'
+            )
+            tcPr.append(tcMar)
+
+        # 1. Header with Delhi Police Crest
+        if hasattr(self, 'crest_logo') and self.crest_logo and os.path.exists(self.crest_logo):
+            p_c = doc.add_paragraph()
+            p_c.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p_c.paragraph_format.space_before = Pt(0)
+            p_c.paragraph_format.space_after = Pt(1)
+            p_c.add_run().add_picture(self.crest_logo, width=Inches(0.65))
+
+        p_h1 = doc.add_paragraph()
+        p_h1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_h1.paragraph_format.space_before = Pt(0)
+        p_h1.paragraph_format.space_after = Pt(1)
+        r = p_h1.add_run("OFFICE OF THE STATION HOUSE OFFICER, CYBER POLICE STATION")
+        set_font(r, size=12, bold=True, color=RGBColor(0, 32, 96))
+
+        p_h2 = doc.add_paragraph()
+        p_h2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_h2.paragraph_format.space_before = Pt(0)
+        p_h2.paragraph_format.space_after = Pt(3)
+        r = p_h2.add_run("NORTH DISTRICT, DELHI POLICE, INDIA")
+        set_font(r, size=10, bold=True, color=RGBColor(0, 32, 96))
+
+        # Title Banner (PowerPoint Slide Header Style)
+        tbl_title = doc.add_table(rows=1, cols=1)
+        tbl_title.alignment = WD_TABLE_ALIGNMENT.CENTER
+        c_title = tbl_title.cell(0, 0)
+        set_cell_background(c_title, "002060")
+        set_cell_margins(c_title, top=140, bottom=140, left=200, right=200)
+        c_title.width = Inches(10.2)
+        p_t = c_title.paragraphs[0]
+        p_t.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r_t1 = p_t.add_run("FORENSIC FINANCIAL TRAIL & EVIDENCE PRESENTATION REPORT\n")
+        set_font(r_t1, size=12, bold=True, color=RGBColor(255, 255, 255))
+        r_t2 = p_t.add_run("Step-by-Step Multi-Layer Fund Flow Analysis (U/s 94 BNSS & Sec 192 BNSS)")
+        set_font(r_t2, size=9.5, italic=True, color=RGBColor(255, 230, 150))
+
+        doc.add_paragraph().paragraph_format.space_after = Pt(4)
+
+        # Metadata Grid (Executive Dashboard)
+        tbl_meta = doc.add_table(rows=2, cols=4)
+        tbl_meta.alignment = WD_TABLE_ALIGNMENT.CENTER
+        meta_data = [
+            [("Case Reference:", case_ref), ("Police Station:", "Cyber PS North District"), ("Investigating Officer:", f"{io_name} ({io_rank})"), ("Disputed Amount:", f"Rs. {disputed_amt}")],
+            [("Complainant Name:", comp_name), ("Victim Bank & A/c:", f"{v_bank} | {v_acc}"), ("Lien / Frozen Amt:", f"Rs. {lien_amt}"), ("Report Date:", report_date)]
+        ]
+        col_w = [Inches(2.55), Inches(2.55), Inches(2.55), Inches(2.55)]
+        for row_idx, row_items in enumerate(meta_data):
+            for col_idx, (label, val) in enumerate(row_items):
+                cell = tbl_meta.cell(row_idx, col_idx)
+                cell.width = col_w[col_idx]
+                set_cell_background(cell, "F2F5F9" if (row_idx + col_idx) % 2 == 0 else "FFFFFF")
+                set_cell_margins(cell, top=80, bottom=80, left=120, right=120)
+                p = cell.paragraphs[0]
+                p.paragraph_format.space_before = Pt(0)
+                p.paragraph_format.space_after = Pt(0)
+                r_lbl = p.add_run(f"{label} ")
+                set_font(r_lbl, size=8.5, bold=True, color=RGBColor(0, 32, 96))
+                r_val = p.add_run(str(val))
+                set_font(r_val, size=8.5, bold=False, color=RGBColor(0, 0, 0))
+
+        # Read Transactions from Excel
+        df_txns = None
+        if excel_path and os.path.exists(excel_path):
+            try:
+                wb = openpyxl.load_workbook(excel_path, data_only=True)
+                if 'Money Transfer to' in wb.sheetnames:
+                    ws = wb['Money Transfer to']
+                    rows = list(ws.iter_rows(values_only=True))
+                    if len(rows) > 1:
+                        df_txns = pd.DataFrame(rows[1:], columns=[str(h or '') for h in rows[0]])
+            except Exception as e:
+                print(f"  [Presentation Excel Note]: {e}")
+
+        # Stage 1: Primary Entry Mules (Layer 1)
+        doc.add_paragraph().paragraph_format.space_after = Pt(4)
+        p_s1 = doc.add_paragraph()
+        p_s1.paragraph_format.space_before = Pt(4)
+        p_s1.paragraph_format.space_after = Pt(2)
+        r_s1 = p_s1.add_run("STAGE 1: PRIMARY ENTRY MULE BENEFICIARIES (LAYER 1 - VICTIM TO MULE)")
+        set_font(r_s1, size=10.5, bold=True, color=RGBColor(0, 32, 96))
+
+        l1_rows = []
+        if df_txns is not None and not df_txns.empty:
+            for _, r_data in df_txns.iterrows():
+                layer_val = str(r_data.get('Layer', '1')).strip()
+                if '1' in layer_val:
+                    l1_rows.append(r_data)
+
+        if not l1_rows:
+            for r_raw in case_context.get("raw_transfers", []):
+                if isinstance(r_raw, list) and len(r_raw) >= 7:
+                    l1_rows.append({
+                        'Layer': 'Layer 1',
+                        'Bank/FIs': r_raw[1],
+                        'Account No': r_raw[2].split('\n')[0] if '\n' in str(r_raw[2]) else str(r_raw[2]),
+                        'Transaction ID/UTR': r_raw[3],
+                        'Disputed Amount': r_raw[5],
+                        'Action Taken': r_raw[7] if len(r_raw) > 7 else 'Lien Requested'
+                    })
+
+        tbl_l1 = doc.add_table(rows=1, cols=6)
+        tbl_l1.alignment = WD_TABLE_ALIGNMENT.CENTER
+        headers_l1 = ['S.No', 'Beneficiary Bank', 'Account Number', 'UTR / Txn Reference', 'Inflow Amount (Rs.)', 'Action / Freeze Status']
+        col_w_l1 = [Inches(0.6), Inches(2.2), Inches(2.0), Inches(2.0), Inches(1.6), Inches(1.8)]
+
+        for c_i, h_text in enumerate(headers_l1):
+            cell = tbl_l1.cell(0, c_i)
+            cell.width = col_w_l1[c_i]
+            set_cell_background(cell, "002060")
+            set_cell_margins(cell, top=100, bottom=100, left=100, right=100)
+            p = cell.paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r = p.add_run(h_text)
+            set_font(r, size=9.0, bold=True, color=RGBColor(255, 255, 255))
+
+        for idx_row, r_d in enumerate(l1_rows):
+            row = tbl_l1.add_row()
+            vals = [
+                f"{idx_row+1:02d}",
+                str(r_d.get('Bank/FIs', 'N/A')).split('\n')[0],
+                str(r_d.get('Account No', 'N/A')).split('\n')[0],
+                str(r_d.get('Transaction ID/UTR', 'N/A')),
+                f"Rs. {str(r_d.get('Disputed Amount', '0.00')).replace('Rs.', '').strip()}",
+                str(r_d.get('Action Taken', 'Notice U/s 94 BNSS Issued')).split('\n')[0]
+            ]
+            bg = "F9FBFC" if idx_row % 2 == 0 else "FFFFFF"
+            for c_i, v_t in enumerate(vals):
+                c = row.cells[c_i]
+                c.width = col_w_l1[c_i]
+                set_cell_background(c, bg)
+                set_cell_margins(c, top=80, bottom=80, left=100, right=100)
+                p = c.paragraphs[0]
+                if c_i in [0, 4]:
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                else:
+                    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                r = p.add_run(v_t)
+                set_font(r, size=8.5, bold=(c_i in [1, 4]))
+
+        # Stage 2: Subsequent Multi-Layer Dispersion (Layers 2-5+)
+        l_other = []
+        if df_txns is not None and not df_txns.empty:
+            for _, r_data in df_txns.iterrows():
+                layer_val = str(r_data.get('Layer', '1')).strip()
+                if '1' not in layer_val:
+                    l_other.append(r_data)
+
+        if l_other:
+            p_s2 = doc.add_paragraph()
+            p_s2.paragraph_format.space_before = Pt(8)
+            p_s2.paragraph_format.space_after = Pt(2)
+            r_s2 = p_s2.add_run("STAGE 2: SUBSEQUENT MULTI-LAYER DISPERSION & OUTFLOW CHANNELS (LAYERS 2-5+)")
+            set_font(r_s2, size=10.5, bold=True, color=RGBColor(0, 32, 96))
+
+            tbl_l2 = doc.add_table(rows=1, cols=6)
+            tbl_l2.alignment = WD_TABLE_ALIGNMENT.CENTER
+            headers_l2 = ['Layer', 'Beneficiary / Entity', 'Account No / Details', 'UTR / Reference', 'Amount (Rs.)', 'Action Taken']
+            for c_i, h_text in enumerate(headers_l2):
+                cell = tbl_l2.cell(0, c_i)
+                cell.width = col_w_l1[c_i]
+                set_cell_background(cell, "1F4E79")
+                set_cell_margins(cell, top=90, bottom=90, left=100, right=100)
+                p = cell.paragraphs[0]
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                r = p.add_run(h_text)
+                set_font(r, size=9.0, bold=True, color=RGBColor(255, 255, 255))
+
+            for idx_row, r_d in enumerate(l_other):
+                row = tbl_l2.add_row()
+                vals = [
+                    str(r_d.get('Layer', 'L2')),
+                    str(r_d.get('Bank/FIs', 'N/A')).split('\n')[0],
+                    str(r_d.get('Account No', 'N/A')).split('\n')[0],
+                    str(r_d.get('Transaction ID/UTR', 'N/A')),
+                    f"Rs. {str(r_d.get('Disputed Amount', '0.00')).replace('Rs.', '').strip()}",
+                    str(r_d.get('Action Taken', 'Requisition Issued')).split('\n')[0]
+                ]
+                bg = "F9FBFC" if idx_row % 2 == 0 else "FFFFFF"
+                for c_i, v_t in enumerate(vals):
+                    c = row.cells[c_i]
+                    c.width = col_w_l1[c_i]
+                    set_cell_background(c, bg)
+                    set_cell_margins(c, top=80, bottom=80, left=100, right=100)
+                    p = c.paragraphs[0]
+                    if c_i in [0, 4]:
+                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    else:
+                        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    r = p.add_run(v_t)
+                    set_font(r, size=8.5, bold=(c_i in [1, 4]))
+
+        # Embedded Flowchart Diagram (Slide Visual)
+        if png_path and os.path.exists(png_path):
+            p_diag_h = doc.add_paragraph()
+            p_diag_h.paragraph_format.space_before = Pt(8)
+            p_diag_h.paragraph_format.space_after = Pt(2)
+            r_dh = p_diag_h.add_run("FORENSIC VISUAL ARCHITECTURE & 3D MONEY TRAIL FLOWCHART:")
+            set_font(r_dh, size=10.5, bold=True, color=RGBColor(0, 32, 96))
+
+            p_img = doc.add_paragraph()
+            p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p_img.paragraph_format.space_before = Pt(2)
+            p_img.paragraph_format.space_after = Pt(4)
+            p_img.add_run().add_picture(png_path, width=Inches(8.5))
+
+        # Statutory Compliance & Judicial Certificate U/s 63 BSA
+        p_cert = doc.add_paragraph()
+        p_cert.paragraph_format.space_before = Pt(6)
+        p_cert.paragraph_format.space_after = Pt(2)
+        r_ch = p_cert.add_run("STATUTORY INVESTIGATION STATUS & CERTIFICATION (SEC 63 BHARATIYA SAKSHYA ADHINIYAM, 2023):")
+        set_font(r_ch, size=9.5, bold=True, color=RGBColor(0, 32, 96))
+
+        pts_cert = [
+            "1. All statutory notices under Section 94 BNSS have been issued to the concerned Banks/FIs to produce certified KYC documents, AOF, bank statements, linked mobile/email, and IP login/logout logs.",
+            "2. Requisitions and money trail updates have been duly uploaded and recorded on the National Cybercrime Reporting Portal (NCRP).",
+            "3. Pursuant to Section 63 of Bharatiya Sakshya Adhiniyam, 2023 (BSA), this computer-generated financial trail report has been produced from electronic records maintained in lawful police investigation custody without tampering."
+        ]
+        for pt in pts_cert:
+            p_pt = doc.add_paragraph()
+            p_pt.paragraph_format.space_before = Pt(0)
+            p_pt.paragraph_format.space_after = Pt(1)
+            r = p_pt.add_run(pt)
+            set_font(r, size=8.5)
+
+        # Signoff Box
+        doc.add_paragraph().paragraph_format.space_after = Pt(4)
+        tbl_sign = doc.add_table(rows=1, cols=2)
+        tbl_sign.alignment = WD_TABLE_ALIGNMENT.CENTER
+        c_io = tbl_sign.cell(0, 0)
+        c_io.width = Inches(5.1)
+        set_cell_margins(c_io, top=80, bottom=80, left=100, right=100)
+        p_io = c_io.paragraphs[0]
+        p_io.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        r_io = p_io.add_run(f"Prepared by:\n({io_name})\n{io_rank}\nPS Cyber, North District, Delhi Police")
+        set_font(r_io, size=9.0, bold=True)
+
+        c_sho = tbl_sign.cell(0, 1)
+        c_sho.width = Inches(5.1)
+        set_cell_margins(c_sho, top=80, bottom=80, left=100, right=100)
+        p_sho = c_sho.paragraphs[0]
+        p_sho.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        r_sho = p_sho.add_run("Forwarded / Approved by:\nStation House Officer\nCyber Police Station, North District\nDelhi Police")
+        set_font(r_sho, size=9.0, bold=True)
+
+        doc.save(output_path)
+        print(f"[OK] Saved Forensic Money Trail Presentation DOCX to: {output_path}")
+        return output_path
 
     def extract_suspect_mobiles(self, case_context: Dict[str, Any]) -> List[Dict[str, str]]:
 
@@ -6183,7 +6502,7 @@ class NCRPUnifiedAgent:
 
                 cell.paragraphs[25].text = ""
 
-                cell.paragraphs[26].text = "Thereafter that I attached the office copy in above said case file."
+                cell.paragraphs[26].text = "Thereafter, statutory notices and requisitions issued to all Banks/FIs were duly uploaded and updated on the NCRP Portal, and office copies were attached in the above said case file."
 
                 cell.paragraphs[27].text = " SHO/Cyber/North sir was apprised with all facts and circumstances."
 
@@ -6227,7 +6546,7 @@ class NCRPUnifiedAgent:
 
                 cell.paragraphs[25].text = ""
 
-                cell.paragraphs[26].text = "तदुपरांत सभी Notices व Letters की Office Copy उपरोक्त Case File में संलग्न की गई।"
+                cell.paragraphs[26].text = "तदुपरांत सभी संबंधित बैंकों/वित्तीय संस्थानों को जारी किए गए नोटिसों एवं विवरण को NCRP Portal पर भी विधिवत अपलोड व अपडेट किया गया तथा सभी Notices व Letters की Office Copy उपरोक्त Case File में संलग्न की गई।"
 
                 cell.paragraphs[27].text = " SHO/Cyber/North sir was apprised with all facts and circumstances."
 
@@ -6411,7 +6730,7 @@ class NCRPUnifiedAgent:
 
                     "docx_path": item.get("docx_path", ""),
 
-                    "subject": f"STATUTORY POLICE NOTICE U/S 94 BNSS | {item['entity']} | {fir_ref}",
+                    "subject": f"Subject: Action required U/S 94 BNSS in {fir_ref} PS Cyber, North District, Delhi.",
 
                     "status": "QUEUED (READY FOR DISPATCH)"
 
@@ -6737,6 +7056,20 @@ class NCRPUnifiedAgent:
             except Exception as ifsc_err:
                 print(f"  [IFSC Directory Warning]: {ifsc_err}")
 
+            # STEP 2c: Forensic Money Trail Presentation DOCX (PPT-style for case file)
+            presentation_docx_path = os.path.join(case_dir, f"Forensic_Money_Trail_Presentation_{ack_no}.docx")
+            try:
+                self.generate_money_trail_presentation_docx(
+                    case_context=ctx,
+                    excel_path=excel_path,
+                    output_path=presentation_docx_path,
+                    png_path=png_path
+                )
+                if os.path.exists(presentation_docx_path):
+                    shutil.copy2(presentation_docx_path, os.path.join(docx_notice_dir, os.path.basename(presentation_docx_path)))
+            except Exception as ppt_err:
+                print(f"  [Presentation DOCX Warning]: {ppt_err}")
+
 
 
         # STEP 3: Bank Statutory Notices & ATM CCTV Notices
@@ -6809,27 +7142,17 @@ class NCRPUnifiedAgent:
         if (all_steps or "telecom_cdr" in steps) and is_fir:
             print("\n>>> [STEP 4/10] TELECOM CDR & SDR REQUISITION LETTER (01-01-2025 TO TILL DATE)...")
 
-            if not suspect_mobiles:
-
-                upi_intel = self.extract_upi_and_contact_intelligence(ctx)
-
-                suspect_mobiles = upi_intel.get("suspect_contacts", [])
-
-            self.generate_telecom_cdr_letter(
-
-                case_context=ctx,
-
-                suspect_numbers=suspect_mobiles or ["9296960895"],
-
-                imei_numbers=imei_list or [],
-
-                output_dir=cdr_dir,
-
-                start_notice_no=start_notice_no,
-
-                notice_date=notice_date_override
-
-            )
+            if not suspect_mobiles and not imei_list:
+                print("  [CDR Module] No suspect mobile numbers or IMEI provided by user/complaint. Skipping CDR letter per user policy.")
+            else:
+                self.generate_telecom_cdr_letter(
+                    case_context=ctx,
+                    suspect_numbers=suspect_mobiles or [],
+                    imei_numbers=imei_list or [],
+                    output_dir=cdr_dir,
+                    start_notice_no=start_notice_no,
+                    notice_date=notice_date_override
+                )
 
 
 

@@ -803,11 +803,9 @@ class EmailDispatchAgent:
         if custom_target:
             recipient = custom_target
             cc = []
-            subject = f"TEST NOTICE U/S 94 BNSS | {entity} | {case_ref}"
         elif disp_mode == "forward_to_nic":
             recipient = default_target_nic
             cc = self.config.get("forwarding_target", {}).get("cc_emails", [])
-            subject = f"[FWD NOTICE U/S 94 BNSS] - {entity} | {case_ref} | Cyber PS North"
         else: # direct_to_nodal or any other mode
             # MANDATORY USER SAFETY ENFORCEMENT:
             # Under NO circumstance should notices be dispatched directly to bank nodal emails without explicit user instruction.
@@ -816,7 +814,27 @@ class EmailDispatchAgent:
             print(f"  [SAFETY SHIELD] Direct bank dispatch to '{notice_info.get('primary_email', '')}' is blocked per user order. Routing safely to officer email: {default_target_nic}")
             recipient = default_target_nic
             cc = []
-            subject = f"[FWD NOTICE U/S 94 BNSS] - {entity} | {case_ref} | Cyber PS North"
+
+        # Determine Email Subject: MUST MATCH NOTICE DOCUMENT SUBJECT EXACTLY
+        doc_subject = None
+        if docx_path and os.path.exists(docx_path):
+            try:
+                import docx as _docx
+                _d = _docx.Document(docx_path)
+                for _p in _d.paragraphs:
+                    _ptxt = _p.text.strip()
+                    if _ptxt.lower().startswith("subject:") or _ptxt.lower().startswith("subject :") or _ptxt.startswith("विषय:"):
+                        doc_subject = _ptxt
+                        break
+            except Exception:
+                pass
+
+        if doc_subject:
+            subject = doc_subject
+        elif notice_info.get("subject"):
+            subject = notice_info.get("subject")
+        else:
+            subject = f"Subject: Action required U/S 94 BNSS in {case_ref} PS Cyber, North District, Delhi."
 
         # Parse Notice Content into Body
         plain_body, html_body = self.parse_notice_document(docx_path, entity_name=entity)
