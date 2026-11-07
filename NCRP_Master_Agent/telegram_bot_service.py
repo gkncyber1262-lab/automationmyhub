@@ -1132,27 +1132,61 @@ async def resend_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ========================================================================================
 # DOCUMENT / PDF HANDLER
 # ========================================================================================
-async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Receives and processes uploaded document / PDF."""
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Politely guides users when an image/photo is sent instead of a PDF."""
     if not await check_access(update):
         return
-    message = update.message
+    msg = update.effective_message
+    if msg:
+        await msg.reply_text(
+            "⚠️ *आपने फोटो/इमेज भेजी है!*\n\n"
+            "NCRP साइबर पोर्टल की शिकायत केवल *PDF फ़ाइल (Document)* के रूप में मान्य होती है।\n"
+            "कृपया अपनी NCRP शिकायत को फ़ाइल (File / Document) के रूप में भेजें ताकि उसका मनी ट्रेल विश्लेषण किया जा सके।",
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Receives and processes any newly uploaded document / PDF with automatic session reset."""
+    if not await check_access(update):
+        return
+    message = update.effective_message
+    if not message:
+        return
     doc = message.document
     chat_id = update.effective_chat.id
 
     if not doc:
-        await message.reply_text("⚠️ कृपया एक वैध दस्तावेज़ (Document) अपलोड करें।")
+        await message.reply_text("⚠️ कृपया एक वैध NCRP शिकायत PDF फ़ाइल भेजें।")
         return
 
     fname = doc.file_name or "complaint.pdf"
-    if not fname.lower().endswith(".pdf") and doc.mime_type != "application/pdf":
-        await message.reply_text("⚠️ केवल PDF फ़ाइलें ही स्वीकार्य हैं। कृपया अपनी NCRP शिकायत की PDF फ़ाइल भेजें।")
+    is_pdf = (
+        fname.lower().endswith(".pdf") or
+        doc.mime_type in ["application/pdf", "application/x-pdf", "binary/octet-stream", "application/octet-stream"] or
+        "acknowledgement" in fname.lower() or
+        "ncrp" in fname.lower()
+    )
+    if not is_pdf:
+        await message.reply_text(
+            f"⚠️ *अमान्य फ़ाइल प्रकार:* `{fname}`\n\n"
+            f"केवल NCRP शिकायत की PDF फ़ाइलें ही स्वीकार्य हैं। कृपया `.pdf` फ़ाइल भेजें।",
+            parse_mode=ParseMode.MARKDOWN
+        )
         return
 
-    status_msg = await message.reply_text(f"📥 फ़ाइल प्राप्त हो रही है: `{fname}`...\nकृपया कुछ क्षण प्रतीक्षा करें।", parse_mode=ParseMode.MARKDOWN)
+    status_msg = await message.reply_text(
+        f"📥 *नई NCRP शिकायत फ़ाइल प्राप्त हो रही है:*\n`{fname}`\n\n"
+        f"कृपया कुछ क्षण प्रतीक्षा करें, डाउनलोडिंग जारी है...",
+        parse_mode=ParseMode.MARKDOWN
+    )
 
     ts = int(time.time())
     clean_fname = re.sub(r'[^a-zA-Z0-9_.-]', '_', fname)
+    if not clean_fname.lower().endswith(".pdf"):
+        clean_fname += ".pdf"
+
+    os.makedirs(agent.input_dir, exist_ok=True)
     local_pdf_path = os.path.join(agent.input_dir, f"TG_{chat_id}_{ts}_{clean_fname}")
 
     try:
@@ -1160,16 +1194,26 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await tg_file.download_to_drive(local_pdf_path)
         print(f"[Telegram Download] Saved {local_pdf_path} ({os.path.getsize(local_pdf_path)} bytes)")
     except Exception as e:
-        await status_msg.edit_text(f"❌ फ़ाइल डाउनलोड करने में त्रुटि: {e}")
+        try:
+            await status_msg.edit_text(f"❌ फ़ाइल डाउनलोड करने में त्रुटि आई: {e}")
+        except Exception:
+            await message.reply_text(f"❌ फ़ाइल डाउनलोड करने में त्रुटि आई: {e}")
         return
 
-    await status_msg.delete()
-    await process_received_pdf(local_pdf_path, message, chat_id)
+    try:
+        await status_msg.delete()
+    except Exception:
+        pass
+
+    await process_received_pdf(local_pdf_path, message, chat_id, context)
 
 
-async def process_received_pdf(pdf_path: str, message, chat_id: int):
+async def process_received_pdf(pdf_path: str, message, chat_id: int, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
     """Parses PDF and presents the interactive questionnaire with Inline Buttons."""
     session = get_user_session(chat_id)
+    # CRITICAL: Always reset session state cleanly whenever a new file arrives!
+    session.clear()
+    session["chat_id"] = chat_id
     session["pdf_path"] = pdf_path
     session["state"] = "awaiting_io"
     session["io_name"] = None
@@ -1181,8 +1225,23 @@ async def process_received_pdf(pdf_path: str, message, chat_id: int):
     temp_dir = os.path.join(agent.output_dir, "_tg_temp")
     os.makedirs(temp_dir, exist_ok=True)
 
-    loop = asyncio.get_running_loop()
-    ctx = await loop.run_in_executor(EXECUTOR, agent.parse_ncrp_pdf, pdf_path, temp_dir)
+    try:
+        loop = asyncio.get_running_loop()
+        ctx = await loop.run_in_executor(EXECUTOR, agent.parse_ncrp_pdf, pdf_path, temp_dir)
+    except Exception as parse_err:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[PDF Parse Error]:\n{tb}")
+        try:
+            await prog_msg.edit_text(
+                f"❌ *NCRP PDF विश्लेषण में त्रुटि आई:*\n`{str(parse_err)[:350]}`\n\n"
+                f"कृपया सुनिश्चित करें कि यह NCRP पोर्टल की वैध शिकायत PDF है।",
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception:
+            await message.reply_text(f"❌ NCRP PDF विश्लेषण में त्रुटि आई: {parse_err}")
+        session["state"] = "idle"
+        return
 
     meta = ctx.get("case_meta", {})
     comp = ctx.get("complainant", {})
@@ -1191,7 +1250,10 @@ async def process_received_pdf(pdf_path: str, message, chat_id: int):
     session["ack_no"] = ack_no
     session["alleged_amount"] = fin.get("alleged_amount") or fin.get("defrauded_amount") or "0"
 
-    await prog_msg.delete()
+    try:
+        await prog_msg.delete()
+    except Exception:
+        pass
 
     amt_val = extract_amount_value(session["alleged_amount"])
     summary_card = (
@@ -2168,6 +2230,9 @@ def build_telegram_app(token: Optional[str] = None):
 
     # Documents (PDFs)
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+
+    # Photos / Images (Guiding user)
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     # Interactive Inline Buttons
     app.add_handler(CallbackQueryHandler(handle_callback_query))
