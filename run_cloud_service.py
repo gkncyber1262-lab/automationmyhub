@@ -56,32 +56,34 @@ async def lifespan(app: FastAPI):
     cfg = load_telegram_credentials()
     token = os.environ.get("TELEGRAM_BOT_TOKEN") or cfg.get("bot_token", "").strip()
 
-    # Strictly lock the webhook to the single canonical Render service to eliminate webhook flapping
-    public_url = os.environ.get("CANONICAL_WEBHOOK_URL", "https://ncrp-cyber-investigation-bot.onrender.com")
+    # Check whether webhook mode is explicitly enabled for cloud deployment
+    enable_webhook = os.environ.get("ENABLE_RENDER_WEBHOOK", "false").lower() in ["1", "true", "yes"]
 
-    log_event(f"Initializing Telegram Bot Service with token: {token[:8]}...{token[-4:] if len(token) > 12 else ''}")
+    if enable_webhook:
+        public_url = os.environ.get("CANONICAL_WEBHOOK_URL", "https://ncrp-cyber-investigation-bot.onrender.com")
+        log_event(f"Initializing Telegram Bot Service in Cloud Webhook Mode with token: {token[:8]}...")
+        try:
+            TG_APP = build_telegram_app(token)
+            await TG_APP.initialize()
+            await TG_APP.start()
 
-    try:
-        TG_APP = build_telegram_app(token)
-        await TG_APP.initialize()
-        await TG_APP.start()
+            webhook_url = f"{public_url.rstrip('/')}/telegram/webhook"
+            log_event(f"Configuring Telegram Webhook: {webhook_url}")
 
-        webhook_url = f"{public_url.rstrip('/')}/telegram/webhook"
-        log_event(f"Configuring Telegram Webhook: {webhook_url}")
-
-        # Preserve pending updates during restarts so officer messages are never lost
-        wh_success = await TG_APP.bot.set_webhook(
-            url=webhook_url,
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=False
-        )
-        if wh_success:
-            IS_WEBHOOK_ACTIVE = True
-            log_event("✅ Telegram Webhook registered and active! ZERO polling conflicts.")
-        else:
-            log_event("⚠️ Webhook registration returned False. Falling back...")
-    except Exception as e:
-        log_event(f"❌ Error during Telegram Bot startup: {e}")
+            wh_success = await TG_APP.bot.set_webhook(
+                url=webhook_url,
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=False
+            )
+            if wh_success:
+                IS_WEBHOOK_ACTIVE = True
+                log_event("✅ Telegram Webhook registered and active!")
+            else:
+                log_event("⚠️ Webhook registration returned False.")
+        except Exception as e:
+            log_event(f"❌ Error during Telegram Bot startup: {e}")
+    else:
+        log_event("ℹ️ Cloud Webhook disabled (ENABLE_RENDER_WEBHOOK!=true). Dedicated PC Local Daemon handles all Telegram bot processing.")
 
     yield
 
