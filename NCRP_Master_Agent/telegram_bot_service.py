@@ -352,17 +352,26 @@ def extract_amount_value(amt_val) -> float:
 
 
 def create_case_zip_bundle(case_dir: str) -> Optional[str]:
-    """Creates a complete ZIP archive of all generated notices and files."""
+    """Creates an optimized, non-redundant ZIP archive of all generated notices and files (strictly under 45MB)."""
     try:
         base_name = os.path.basename(case_dir)
         zip_path = os.path.join(case_dir, f"All_Notices_Bundle_{base_name}.zip")
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for root, dirs, files in os.walk(case_dir):
+                rel_root = os.path.relpath(root, case_dir).lower()
+                # Exclude duplicate individual_notices directory to keep under 50MB
+                if 'individual_notices' in rel_root:
+                    continue
                 for f in files:
-                    if f.endswith(('.docx', '.pdf', '.png', '.jpg', '.xlsx')) and not f.endswith('.zip'):
+                    if f.endswith(('.docx', '.pdf', '.png', '.jpg', '.xlsx', '.html')) and not f.endswith('.zip'):
                         fp = os.path.join(root, f)
                         rel_path = os.path.relpath(fp, case_dir)
                         zf.write(fp, rel_path)
+        sz_mb = os.path.getsize(zip_path) / (1024 * 1024)
+        print(f"[ZIP Bundle Created] {zip_path} ({sz_mb:.2f} MB)")
+        if sz_mb > 48.0:
+            print(f"[ZIP Warning] Archive exceeds 48MB ({sz_mb:.2f} MB). Skipping zip to prevent upload freeze.")
+            return None
         return zip_path
     except Exception as e:
         print(f"[ZIP Warning] Could not create zip: {e}")
@@ -1928,17 +1937,20 @@ async def dispatch_case_files(
 
     try:
         # 0. DELIVER COMPLETE CASE ZIP BUNDLE FIRST (All notices, diagrams, directories in 1 bundle)
-        zip_file = create_case_zip_bundle(case_dir)
-        if zip_file and os.path.exists(zip_file):
-            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
-            await safe_send_document(
-                bot=bot,
-                chat_id=chat_id,
-                file_path=zip_file,
-                caption=f"📦 *संपूर्ण केस नोटिस बंडल (Complete Case Bundle ZIP)*\n• {safe_ref}\n• (सभी बैंक नोटिस DOCX व PDF, ATM CCTV नोटिस, कंबाइंड मांग पत्र व 3D फ्लोचार्ट)",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            await asyncio.sleep(1.5)
+        try:
+            zip_file = create_case_zip_bundle(case_dir)
+            if zip_file and os.path.exists(zip_file):
+                await bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
+                await safe_send_document(
+                    bot=bot,
+                    chat_id=chat_id,
+                    file_path=zip_file,
+                    caption=f"📦 *संपूर्ण केस नोटिस बंडल (Complete Case Bundle ZIP)*\n• {safe_ref}\n• (सभी बैंक नोटिस DOCX व PDF, ATM CCTV नोटिस, कंबाइंड मांग पत्र व 3D फ्लोचार्ट)",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                await asyncio.sleep(1.5)
+        except Exception as ze:
+            print(f"[ZIP Dispatch Error Non-fatal]: {ze}")
 
         # 1. DELIVER COMBINE NOTICE DOCX (If bank notices enabled)
         if notice_type in ["both", "bank"]:
