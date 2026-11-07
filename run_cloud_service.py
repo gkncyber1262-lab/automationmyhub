@@ -117,8 +117,8 @@ async def telegram_webhook(request: Request):
         log_event(f"📩 Webhook update #{u_id} from {from_u.get('id')} ({from_u.get('first_name')}): {txt}")
 
         update = Update.de_json(data, TG_APP.bot)
-        # Process update asynchronously in the event loop
-        await TG_APP.process_update(update)
+        # Run update processing as decoupled task so webhook acknowledges Telegram within 50ms
+        asyncio.create_task(TG_APP.process_update(update))
         return {"ok": True}
     except Exception as e:
         log_event(f"Webhook processing error: {e}")

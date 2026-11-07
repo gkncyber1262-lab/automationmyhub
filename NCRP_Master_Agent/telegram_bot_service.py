@@ -1752,7 +1752,7 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
     fir_details = session.get("fir_details", {"is_fir": False})
     notice_date = session.get("notice_date", datetime.datetime.now().strftime("%d/%m/%Y"))
     notice_type = session.get("notice_type", "both")
-    max_layer = session.get("max_layer", 5)
+    max_layer = session.get("max_layer", 999)
     email_settings = session.get("email_settings", {"send_email": False})
 
     session["state"] = "processing"
@@ -1775,7 +1775,10 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
         f"⚡ *प्रक्रिया प्रगति:* मनी ट्रेल विश्लेषण, शुद्ध सफेद बैकग्राउंड 3D फ्लोचार्ट, धारा 94 BNSS नोटिस, कंबाइंड मांग पत्र तैयार किए जा रहे हैं...\n"
         f"कृपया *25-35 सेकंड* प्रतीक्षा करें..."
     )
-    status_msg = await message.reply_text(start_banner, parse_mode=ParseMode.MARKDOWN)
+    try:
+        status_msg = await context.bot.send_message(chat_id=chat_id, text=start_banner, parse_mode=ParseMode.MARKDOWN)
+    except Exception:
+        status_msg = await context.bot.send_message(chat_id=chat_id, text=start_banner.replace('*', ''))
 
     # Launch background executor
     loop = asyncio.get_running_loop()
@@ -1811,11 +1814,14 @@ async def trigger_execution_telegram(message, chat_id: int, session: Dict[str, A
     ref_str = f"FIR No. {active_fir['fir_no']}" if active_fir.get("is_fir") else f"ACK No. {ack}"
     safe_ref = ref_str.replace('_', ' ')
 
-    await status_msg.edit_text(
-        f"✅ *सफलतापूर्वक तैयार!* ({safe_ref})\n"
-        f"कानूनी नोटिस (PDF व DOCX), व्हाइट बैकग्राउंड 3D फ्लोचार्ट और सम्पूर्ण ZIP बंडल आपके Telegram पर भेजे जा रहे हैं...",
-        parse_mode=ParseMode.MARKDOWN
-    )
+    try:
+        await status_msg.edit_text(
+            f"✅ *सफलतापूर्वक तैयार!* ({safe_ref})\n"
+            f"कानूनी नोटिस (PDF व DOCX), व्हाइट बैकग्राउंड 3D फ्लोचार्ट और सम्पूर्ण ZIP बंडल आपके Telegram पर भेजे जा रहे हैं...",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    except Exception:
+        await context.bot.send_message(chat_id=chat_id, text=f"✅ सफलतापूर्वक तैयार! ({safe_ref})\nसभी फाइलें भेजी जा रही हैं...")
 
     bot = context.bot
 
