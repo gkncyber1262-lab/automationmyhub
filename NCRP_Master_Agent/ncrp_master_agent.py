@@ -2920,7 +2920,7 @@ class NCRPUnifiedAgent:
 
             p_body.paragraph_format.space_after = Pt(4)
 
-            acc_list_str = ', '.join(b_group['Account No'].tolist())
+            acc_list_str = ', '.join(b_group['Account No'].unique())
 
             r_b = p_body.add_run(
 
@@ -2966,40 +2966,42 @@ class NCRPUnifiedAgent:
 
             tot_disp = 0.0
 
-            for _, r_data in b_group.iterrows():
+            # Group by Account No and IFSC Code so Account and IFSC are NEVER duplicated
+            for (acc_no, ifsc_code), a_group in b_group.groupby(['Account No', 'Ifsc Code'], sort=False):
+                layer_str = str(a_group['Layer'].iloc[0])
+                txns = []
+                for _, r_data in a_group.iterrows():
+                    tot_disp += r_data['Disputed_Float']
+                    u_val = str(r_data['Transaction ID / UTR Number']).strip()
+                    amt_val = r_data['Disputed_Float']
+                    txns.append((u_val, amt_val))
 
-                tot_disp += r_data['Disputed_Float']
+                if len(txns) > 1:
+                    # Multiple transactions for this account:
+                    # Show UTR with amount alongside each UTR, and amounts on corresponding lines
+                    utr_str = "\n".join([f"{u} (Rs. {amt:,.2f})" for u, amt in txns])
+                    amt_str = "\n".join([f"Rs. {amt:,.2f}" for u, amt in txns])
+                else:
+                    u, amt = txns[0]
+                    utr_str = u
+                    amt_str = f"Rs. {amt:,.2f}"
 
                 row_c = tbl1.add_row().cells
-
                 row_vals = [
-
                     ack_no,
-
-                    str(r_data['Layer']),
-
-                    str(r_data['Account No']),
-
-                    str(r_data['Ifsc Code']),
-
-                    str(r_data['Transaction ID / UTR Number']),
-
-                    f"Rs. {r_data['Disputed_Float']:,.2f}",
-
+                    layer_str,
+                    str(acc_no),
+                    str(ifsc_code),
+                    utr_str,
+                    amt_str,
                     clean_bank_name
-
                 ]
 
                 for c_idx, val in enumerate(row_vals):
-
                     row_c[c_idx].width = col_widths[c_idx]
-
                     p_cell = row_c[c_idx].paragraphs[0]
-
                     p_cell.alignment = WD_ALIGN_PARAGRAPH.CENTER if c_idx in [0, 1, 3, 6] else WD_ALIGN_PARAGRAPH.RIGHT if c_idx == 5 else WD_ALIGN_PARAGRAPH.LEFT
-
                     run_c = p_cell.add_run(val)
-
                     set_font(run_c, size=8.0)
 
 
@@ -3024,8 +3026,7 @@ class NCRPUnifiedAgent:
                 '4. Please Provide (if any) changed/updated linked Mobile numbers and Email IDs of the alleged Bank Account/s.',
                 '5. Kindly provide concerned Branch Manager Contact No., Name and Official Email ID.',
                 '6. Kindly provide IP login details and logout details (along with timestamp, Public IP address, Port no., and Device ID) of Net/Mobile Banking for the alleged account(s).',
-                '7. Provide certified copies of PAN Card, Aadhaar Card (Masked), CKYC Identifier, and Video KYC / Biometric onboarding records along with geo-coordinates/IP at the time of account opening.',
-                '8. Provide written confirmation of Debit Freeze / Lien marked on alleged account(s) pursuant to this notice, current balance available, Certificate U/s 63 Bharatiya Sakshya Adhiniyam (BSA) for electronic records, and details of subsequent attempted transactions/withdrawals.'
+                '7. Provide certified copies of PAN Card, Aadhaar Card (Masked), CKYC Identifier, and Video KYC / Biometric onboarding records along with geo-coordinates/IP at the time of account opening.'
             ]
 
             for p_text in pts:
@@ -3811,40 +3812,42 @@ class NCRPUnifiedAgent:
 
         tot_disp = 0.0
 
-        for _, r_data in df_txns.iterrows():
+        # Group by Bank, Account No and IFSC Code so Account and IFSC are NEVER duplicated
+        for (b_name, acc_no, ifsc_code), a_group in df_txns.groupby(['Bank/FIs', 'Account No', 'Ifsc Code'], sort=False):
+            layer_str = str(a_group['Layer'].iloc[0])
+            txns = []
+            for _, r_data in a_group.iterrows():
+                tot_disp += r_data['Disputed_Float']
+                u_val = str(r_data['Transaction ID / UTR Number']).strip()
+                amt_val = r_data['Disputed_Float']
+                txns.append((u_val, amt_val))
 
-            tot_disp += r_data['Disputed_Float']
+            if len(txns) > 1:
+                # Multiple transactions for this account:
+                # Show UTR with amount alongside each UTR, and amounts on corresponding lines
+                utr_str = "\n".join([f"{u} (Rs. {amt:,.2f})" for u, amt in txns])
+                amt_str = "\n".join([f"Rs. {amt:,.2f}" for u, amt in txns])
+            else:
+                u, amt = txns[0]
+                utr_str = u
+                amt_str = f"Rs. {amt:,.2f}"
 
             row_c = tbl1.add_row().cells
-
             row_vals = [
-
                 ack_no,
-
-                str(r_data['Layer']),
-
-                str(r_data['Account No']),
-
-                str(r_data['Ifsc Code']),
-
-                str(r_data['Transaction ID / UTR Number']),
-
-                f"Rs. {r_data['Disputed_Float']:,.2f}",
-
-                str(r_data['Bank/FIs'])
-
+                layer_str,
+                str(acc_no),
+                str(ifsc_code),
+                utr_str,
+                amt_str,
+                str(b_name)
             ]
 
             for c_idx, val in enumerate(row_vals):
-
                 row_c[c_idx].width = col_widths[c_idx]
-
                 p_cell = row_c[c_idx].paragraphs[0]
-
                 p_cell.alignment = WD_ALIGN_PARAGRAPH.CENTER if c_idx in [0, 1, 3] else WD_ALIGN_PARAGRAPH.RIGHT if c_idx == 5 else WD_ALIGN_PARAGRAPH.LEFT
-
                 run_c = p_cell.add_run(val)
-
                 set_font(run_c, size=7.5)
 
 
@@ -3876,9 +3879,7 @@ class NCRPUnifiedAgent:
 
             '6. Kindly provide IP login details and logout details (along with timestamp, Public IP address, Port no., and Device ID) of Net/Mobile Banking for the alleged account(s).',
 
-            '7. Provide certified copies of PAN Card, Aadhaar Card (Masked), CKYC Identifier, and Video KYC / Biometric onboarding records along with geo-coordinates/IP at the time of account opening.',
-
-            '8. Provide written confirmation of Debit Freeze / Lien marked on alleged account(s) pursuant to this notice, current balance available, Certificate U/s 63 Bharatiya Sakshya Adhiniyam (BSA) for electronic records, and details of subsequent attempted transactions/withdrawals.'
+            '7. Provide certified copies of PAN Card, Aadhaar Card (Masked), CKYC Identifier, and Video KYC / Biometric onboarding records along with geo-coordinates/IP at the time of account opening.'
 
         ]
 
